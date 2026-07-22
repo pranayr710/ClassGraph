@@ -1,0 +1,31 @@
+# Stage 1 (Perception) — Week 1
+# Pin to majors; teammates can bump patch versions if security warnings arise.
+
+# Core
+numpy>=1.26,<2.0
+opencv-python>=4.9,<5.0
+
+# YOLOv11 (Person A)
+ultralytics>=8.3,<9.0
+torch>=2.2,<3.0
+torchvision>=0.17,<1.0
+
+# MediaPipe (Person B)
+# NOTE: face.py uses the legacy Solutions Face Mesh API (mp.solutions.face_mesh).
+# MediaPipe removed the Solutions API from the wheels at 0.10.30+ (those are
+# Tasks-API-only, and also require numpy>=2). Pinned to the last verified build
+# that ships mp.solutions.face_mesh and stays compatible with numpy<2 (above).
+mediapipe==0.10.21
+
+# SixDRepNet (Person C)
+sixdrepnet>=0.1.7
+
+# Integration + CLI (Day 4)
+tqdm>=4.66
+jsonschema>=4.21
+
+# Dev / tests
+pytest>=8.0
+pytest-cov>=4.1
+black>=24.0
+ruff>=0.4
