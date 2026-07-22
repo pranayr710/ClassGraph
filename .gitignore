@@ -9,3 +9,5 @@ ENV/
 env/
 .env
 .ipynb_checkpoints/
+
+datasets/
