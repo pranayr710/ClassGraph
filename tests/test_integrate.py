@@ -1,15 +1,22 @@
 """Integration tests for :mod:`backend.integrate`.
 
 The full pipeline is driven with lightweight fakes injected into
-``process_video`` (the real Detector/FaceAnalyzer/HeadPoseEstimator need heavy
-ML packages + weights). The fakes return the *real* result dataclasses
-(``Person``/``Obj``/``FaceResult``/``HeadPoseResult``), so the wiring,
-index-alignment, contract assembly, JSONL writing and sample-rate behaviour are
-all exercised for real and validated against the frozen ``schema.json``.
+``process_video`` for the three heavy modules (the real
+Detector/FaceAnalyzer/HeadPoseEstimator need ML packages + weights). The fakes
+return the *real* result dataclasses (``Person``/``Obj``/``FaceResult``/
+``HeadPoseResult``), so the wiring, index-alignment, contract assembly, JSONL
+writing and sample-rate behaviour are all exercised for real and validated
+against the frozen ``schema.json``.
+
+Person tracking (Stage 2) is deliberately NOT faked here: ``PersonTracker``
+needs only ``ultralytics`` + ``lap`` (no weights, no GPU), the same real
+dependency ``test_detection.py`` already requires, so ``process_video`` builds
+a genuine ``PersonTracker`` and these tests exercise real ByteTrack end to end.
 
 Required coverage:
     1. End-to-end on a 5-second fixture video -> valid JSONL matching schema.
     2. --sample-rate 5 produces ~1/5 the lines of --sample-rate 1.
+    3. Stage 2: a continuously-visible person keeps one stable track_id.
 """
 
 from __future__ import annotations
@@ -24,6 +31,8 @@ import pytest
 cv2 = pytest.importorskip("cv2")
 jsonschema = pytest.importorskip("jsonschema")
 pytest.importorskip("tqdm")
+# PersonTracker (Stage 2) is not faked below, so its real dependency is needed.
+pytest.importorskip("ultralytics")
 
 from backend.config import CONFIG  # noqa: E402 - after importorskip
 from backend.detection import Obj, Person  # noqa: E402
@@ -98,7 +107,11 @@ def _make_fixture_video(path: Path, n_frames: int) -> int:
 
 
 def _fakes() -> dict:
-    """Injected-estimator kwargs for process_video."""
+    """Injected-estimator kwargs for process_video.
+
+    ``person_tracker`` is deliberately absent: process_video builds a real
+    ``PersonTracker`` (see the module docstring for why that's safe here).
+    """
     return {
         "detector": _FakeDetector(),
         "face_analyzer": _FakeFaceAnalyzer(),
@@ -137,7 +150,12 @@ def test_end_to_end_valid_jsonl(schema: dict, tmp_path: Path) -> None:
 
         assert len(record["persons"]) == 1
         person = record["persons"][0]
-        assert person["track_id"] is None  # Stage 1 leaves tracking to Stage 2
+        # Stage 2: the fake detector reports the same bbox every frame, so
+        # ByteTrack should hold one stable id across the whole clip. Frame 0
+        # is ByteTrack's own frame_id 1, which activates a new track
+        # immediately (see backend.tracking's module docstring), so the id is
+        # present from the very first record here, not just from frame 1 on.
+        assert person["track_id"] == 1
         assert len(person["face"]["landmarks"]) == 468
         assert person["head_pose"]["gaze_label"] == "teacher"
         assert record["objects"][0]["cls"] == "laptop"

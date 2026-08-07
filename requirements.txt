@@ -10,6 +10,11 @@ ultralytics>=8.3,<9.0
 torch>=2.2,<3.0
 torchvision>=0.17,<1.0
 
+# ByteTrack (Stage 2, tracking.py) — ultralytics' bundled BYTETracker needs
+# `lap` for its Hungarian assignment; pin it explicitly rather than rely on
+# ultralytics' own runtime auto-install, which is unavailable offline.
+lap>=0.5.12
+
 # MediaPipe (Person B)
 # NOTE: face.py uses the legacy Solutions Face Mesh API (mp.solutions.face_mesh).
 # MediaPipe removed the Solutions API from the wheels at 0.10.30+ (those are

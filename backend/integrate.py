@@ -1,14 +1,18 @@
-"""Stage 1 integration — wire detection + face + head-pose into JSONL output.
+"""Stage 1+2 integration — wire detection + face + head-pose + tracking into JSONL.
 
-Runs the three perception modules over a video and emits the frozen Stage 1
-contract, one JSON object per processed frame:
+Runs the perception modules over a video and emits the frozen Stage 1 contract,
+one JSON object per processed frame:
 
     Detector       -> persons (bbox, confidence) + objects
     FaceAnalyzer   -> per-person face landmarks + EAR (index-aligned)
     HeadPoseEstimator -> per-face yaw/pitch/roll + gaze label (index-aligned)
+    PersonTracker  -> per-person track_id (Stage 2, index-aligned)
 
-The per-person ``track_id`` is always ``null`` in Stage 1 (ByteTrack fills it
-in Stage 2). Output validates against ``schema.json``.
+A person's ``track_id`` is ``null`` whenever ByteTrack has not (yet) confirmed
+them as a track this frame — expected on a first sighting, not a dropped
+detection; see :mod:`backend.tracking`. Output validates against
+``schema.json``, which already types ``track_id`` as ``int | null`` for
+exactly this reason.
 
 Usage (CLI):
     python -m backend.integrate --video in.mp4 --out out.jsonl --sample-rate 5
@@ -37,6 +41,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from backend.detection import Detector, Obj, Person
     from backend.face import FaceAnalyzer, FaceResult
     from backend.headpose import HeadPoseEstimator, HeadPoseResult
+    from backend.tracking import PersonTracker
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +54,7 @@ logger = logging.getLogger(__name__)
 class DetectorLike(Protocol):
     """Anything exposing ``detect(frame) -> (persons, objects)``."""
 
-    def detect(self, frame: np.ndarray) -> tuple[list["Person"], list["Obj"]]:
-        ...
+    def detect(self, frame: np.ndarray) -> tuple[list["Person"], list["Obj"]]: ...
 
 
 class FaceAnalyzerLike(Protocol):
@@ -58,8 +62,7 @@ class FaceAnalyzerLike(Protocol):
 
     def analyze(
         self, frame: np.ndarray, person_bboxes: Sequence[Sequence[float]]
-    ) -> list["FaceResult"]:
-        ...
+    ) -> list["FaceResult"]: ...
 
 
 class HeadPoseLike(Protocol):
@@ -67,8 +70,13 @@ class HeadPoseLike(Protocol):
 
     def estimate(
         self, frame: np.ndarray, face_bboxes: Sequence[Sequence[float] | None]
-    ) -> list["HeadPoseResult | None"]:
-        ...
+    ) -> list["HeadPoseResult | None"]: ...
+
+
+class PersonTrackerLike(Protocol):
+    """Anything exposing ``update(persons) -> list[track_id|None]``."""
+
+    def update(self, persons: Sequence["Person"]) -> list[int | None]: ...
 
 
 def _face_to_json(face: "FaceResult | None") -> dict | None:
@@ -123,6 +131,7 @@ def _assemble_frame(
     persons: list["Person"],
     faces: list["FaceResult"],
     headposes: list["HeadPoseResult | None"],
+    track_ids: list[int | None],
     objects: list["Obj"],
 ) -> dict:
     """Build one JSONL record in the frozen Stage 1 schema.
@@ -133,26 +142,31 @@ def _assemble_frame(
         persons: Detected persons for this frame.
         faces: Face results, index-aligned with ``persons``.
         headposes: Head-pose results, index-aligned with ``persons``.
+        track_ids: Stage 2 track ids, index-aligned with ``persons``. An entry
+            is ``None`` when ByteTrack has not (yet) confirmed that person as a
+            track this frame (see :mod:`backend.tracking`) — expected, not an
+            error.
         objects: Detected whitelisted objects.
 
     Returns:
         A JSON-serialisable dict matching ``schema.json``.
 
     Raises:
-        ValueError: If ``faces``/``headposes`` are not aligned with ``persons``.
+        ValueError: If ``faces``/``headposes``/``track_ids`` are not aligned
+            with ``persons``.
     """
-    if not (len(persons) == len(faces) == len(headposes)):
+    if not (len(persons) == len(faces) == len(headposes) == len(track_ids)):
         raise ValueError(
             "Misaligned per-person lists: "
             f"persons={len(persons)}, faces={len(faces)}, "
-            f"headposes={len(headposes)}."
+            f"headposes={len(headposes)}, track_ids={len(track_ids)}."
         )
 
     person_records = []
-    for person, face, hp in zip(persons, faces, headposes):
+    for person, face, hp, track_id in zip(persons, faces, headposes, track_ids):
         person_records.append(
             {
-                "track_id": None,  # filled by ByteTrack in Stage 2
+                "track_id": None if track_id is None else int(track_id),
                 "bbox": [int(v) for v in person.bbox],
                 "confidence": float(person.confidence),
                 "face": _face_to_json(face),
@@ -177,32 +191,32 @@ def _assemble_frame(
     }
 
 
-def _build_estimators(
-    config: Config,
-) -> tuple["Detector", "FaceAnalyzer", "HeadPoseEstimator"]:
-    """Construct the three real perception modules from config.
-
-    Imported lazily so the heavy ML dependencies are only required when running
-    the real pipeline (tests inject fakes instead).
-
-    Args:
-        config: The full pipeline config.
-
-    Returns:
-        A ``(detector, face_analyzer, headpose_estimator)`` tuple.
-
-    Raises:
-        ImportError: If a required ML package is not installed.
-        RuntimeError: If a model fails to load.
-    """
+def _build_detector(config: Config) -> "Detector":
+    """Construct the real :class:`~backend.detection.Detector` from config."""
     from backend.detection import Detector
+
+    return Detector(config.detection)
+
+
+def _build_face_analyzer(config: Config) -> "FaceAnalyzer":
+    """Construct the real :class:`~backend.face.FaceAnalyzer` from config."""
     from backend.face import FaceAnalyzer
+
+    return FaceAnalyzer(config.face)
+
+
+def _build_headpose_estimator(config: Config) -> "HeadPoseEstimator":
+    """Construct the real :class:`~backend.headpose.HeadPoseEstimator` from config."""
     from backend.headpose import HeadPoseEstimator
 
-    detector = Detector(config.detection)
-    face_analyzer = FaceAnalyzer(config.face)
-    headpose_estimator = HeadPoseEstimator(config.headpose)
-    return detector, face_analyzer, headpose_estimator
+    return HeadPoseEstimator(config.headpose)
+
+
+def _build_person_tracker(config: Config) -> "PersonTracker":
+    """Construct the real :class:`~backend.tracking.PersonTracker` from config."""
+    from backend.tracking import PersonTracker
+
+    return PersonTracker(config.tracking)
 
 
 def process_video(
@@ -213,8 +227,9 @@ def process_video(
     detector: DetectorLike | None = None,
     face_analyzer: FaceAnalyzerLike | None = None,
     headpose_estimator: HeadPoseLike | None = None,
+    person_tracker: PersonTrackerLike | None = None,
 ) -> int:
-    """Run the full Stage 1 pipeline over a video and write JSONL output.
+    """Run the full Stage 1+2 pipeline over a video and write JSONL output.
 
     Args:
         video_path: Path to the input video file.
@@ -226,6 +241,8 @@ def process_video(
         detector: Optional detector to reuse (constructed from config if None).
         face_analyzer: Optional face analyzer (constructed from config if None).
         headpose_estimator: Optional head-pose estimator (built if None).
+        person_tracker: Optional tracker to reuse (built from config if None).
+            Must be fresh for this video — see :class:`backend.tracking.PersonTracker`.
 
     Returns:
         The number of frames processed and written.
@@ -242,11 +259,14 @@ def process_video(
     if not src.is_file():
         raise FileNotFoundError(f"Input video not found: {src}")
 
-    if detector is None or face_analyzer is None or headpose_estimator is None:
-        built_detector, built_face, built_hp = _build_estimators(config)
-        detector = detector or built_detector
-        face_analyzer = face_analyzer or built_face
-        headpose_estimator = headpose_estimator or built_hp
+    # Each component builds independently, only if not injected, so a caller
+    # supplying fakes for the heavy ML modules never pulls in their real
+    # dependencies just because a different component (e.g. the tracker) was
+    # left to build for real, and vice versa.
+    detector = detector or _build_detector(config)
+    face_analyzer = face_analyzer or _build_face_analyzer(config)
+    headpose_estimator = headpose_estimator or _build_headpose_estimator(config)
+    person_tracker = person_tracker or _build_person_tracker(config)
 
     sample_rate = max(int(config.pipeline.sample_rate), 1)
     log_every = max(int(config.pipeline.log_every_frames), 1)
@@ -304,9 +324,19 @@ def process_video(
                 faces = face_analyzer.analyze(frame, person_bboxes)
                 face_bboxes = [f.face_bbox for f in faces]
                 headposes = headpose_estimator.estimate(frame, face_bboxes)
+                # Tracking runs on every processed frame, in order: its motion
+                # model assumes fixed spacing between consecutive updates, so
+                # this must stay inside the sample_rate-filtered branch.
+                track_ids = person_tracker.update(persons)
 
                 record = _assemble_frame(
-                    frame_index, timestamp_ms, persons, faces, headposes, objects
+                    frame_index,
+                    timestamp_ms,
+                    persons,
+                    faces,
+                    headposes,
+                    track_ids,
+                    objects,
                 )
                 fh.write(json.dumps(record) + "\n")
                 written += 1
@@ -365,8 +395,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m backend.integrate",
         description=(
-            "Run the full ClassGraph Stage 1 pipeline (detection + face + "
-            "head pose) over a video and write per-frame JSONL."
+            "Run the full ClassGraph Stage 1+2 pipeline (detection + face + "
+            "head pose + tracking) over a video and write per-frame JSONL."
         ),
     )
     parser.add_argument("--video", required=True, type=str, help="Input video path.")

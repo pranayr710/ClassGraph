@@ -148,6 +148,38 @@ class HeadPoseConfig:
 
 
 @dataclass(frozen=True)
+class TrackingConfig:
+    """Stage 2 — ByteTrack settings, filling the ``track_id`` field Stage 1 always leaves ``null``.
+
+    Wraps ultralytics' own ``BYTETracker``; these six fields are exactly what
+    it reads from its ``args`` object (verified against
+    ``ultralytics/trackers/byte_tracker.py`` and its default
+    ``bytetrack.yaml``), so no local tracking logic is implemented here.
+    """
+
+    # First-stage association only matches detections scoring at or above
+    # this; second stage recovers weaker ones down to track_low_thresh so an
+    # occluded person is not immediately dropped.
+    track_high_thresh: float = 0.25
+    track_low_thresh: float = 0.10
+
+    # A detection with no match starts a new track only if its score is at
+    # least this — keeps one-off false-positive detections from spawning IDs.
+    new_track_thresh: float = 0.25
+
+    # How many frames a track survives with no matching detection before it is
+    # dropped for good (handles brief occlusion / a face turned away).
+    track_buffer: int = 30
+
+    # IoU distance threshold for the Hungarian assignment between existing
+    # tracks and this frame's detections.
+    match_thresh: float = 0.80
+
+    # Blend detection confidence into the assignment cost, not just IoU.
+    fuse_score: bool = True
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     """Shared integration (Day 4) settings."""
 
@@ -173,6 +205,7 @@ class Config:
     detection: DetectionConfig = field(default_factory=DetectionConfig)
     face: FaceConfig = field(default_factory=FaceConfig)
     headpose: HeadPoseConfig = field(default_factory=HeadPoseConfig)
+    tracking: TrackingConfig = field(default_factory=TrackingConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
 
     # Logging
