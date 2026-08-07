@@ -58,6 +58,13 @@ class HeadPoseResult:
             head turned to their left; positive = to their right.
         pitch: Rotation about the horizontal axis, degrees. Positive = looking
             down; negative = looking up/back.
+
+            Note this is the **negation** of what SixDRepNet returns. The
+            package is up-positive: in its own ``draw_axis`` the face-direction
+            axis is drawn at ``y = -cos(yaw) * sin(pitch)``, and because image
+            ``y`` grows downward, a positive pitch points the nose upward.
+            :meth:`HeadPoseEstimator.estimate` flips the sign so this
+            down-positive contract holds for every consumer.
         roll: In-plane tilt, degrees.
         gaze_label: Coarse gaze bucket derived from yaw/pitch.
     """
@@ -363,7 +370,10 @@ class HeadPoseEstimator:
 
             try:
                 yaw_f = _to_scalar(yaw)
-                pitch_f = _to_scalar(pitch)
+                # SixDRepNet reports pitch as up-positive; this module's
+                # contract (see HeadPoseResult) is down-positive. Negate here so
+                # every consumer, including classify_gaze, sees one convention.
+                pitch_f = -_to_scalar(pitch)
                 roll_f = _to_scalar(roll)
             except ValueError as exc:
                 logger.warning(

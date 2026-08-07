@@ -132,17 +132,59 @@ def test_alignment_none_in_none_out() -> None:
     assert fake.calls == 2
 
 
+def test_pitch_sign_is_flipped_to_down_positive() -> None:
+    """estimate() negates SixDRepNet's up-positive pitch to down-positive.
+
+    SixDRepNet is up-positive: its own ``draw_axis`` places the face-direction
+    axis at ``y = -cos(yaw) * sin(pitch)``, and image ``y`` grows downward, so a
+    positive pitch points the nose up. :class:`HeadPoseResult` documents
+    down-positive pitch instead, so the sign must be flipped on the way out.
+
+    Without this, a student bowed over a desk (model pitch about -26) was
+    labelled ``"back"`` and ``"down"`` was unreachable in practice.
+    """
+    frame = np.zeros((400, 400, 3), dtype=np.uint8)
+    box = (50, 50, 120, 120)
+
+    # Model says "looking down" (negative in its convention).
+    looking_down = HeadPoseEstimator(
+        model=_FakeSixDRepNet(pitch=-30.0, yaw=0.0, roll=0.0)
+    )
+    result = looking_down.estimate(frame, [box])[0]
+    assert result is not None
+    assert result.pitch == 30.0, "down should be positive on the way out"
+    assert result.gaze_label == "down"
+
+    # Model says "looking up" (positive in its convention).
+    looking_up = HeadPoseEstimator(model=_FakeSixDRepNet(pitch=30.0, yaw=0.0, roll=0.0))
+    result = looking_up.estimate(frame, [box])[0]
+    assert result is not None
+    assert result.pitch == -30.0
+    assert result.gaze_label == "back"
+
+    # yaw and roll must be passed through untouched.
+    passthrough = HeadPoseEstimator(
+        model=_FakeSixDRepNet(pitch=0.0, yaw=12.5, roll=-7.5)
+    )
+    result = passthrough.estimate(frame, [box])[0]
+    assert result is not None
+    assert result.yaw == 12.5
+    assert result.roll == -7.5
+
+
 def test_gaze_label_is_allowed() -> None:
     """Every produced gaze_label is one of the five allowed strings."""
     frame = np.zeros((400, 400, 3), dtype=np.uint8)
     box = (50, 50, 120, 120)
-    # A spread of orientations covering each labelled region.
+    # A spread of orientations covering each labelled region. These are raw
+    # SixDRepNet values (up-positive pitch), which estimate() negates, so the
+    # expected label follows the *negated* pitch.
     poses = [
         (0.0, 0.0),  # teacher
         (0.0, 40.0),  # right
         (0.0, -40.0),  # left
-        (40.0, 0.0),  # down
-        (-40.0, 0.0),  # back
+        (-40.0, 0.0),  # -> pitch +40 -> down
+        (40.0, 0.0),  # -> pitch -40 -> back
         (30.0, 30.0),  # mixed
         (-22.0, 10.0),  # dead-zone-ish
     ]
