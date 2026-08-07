@@ -29,6 +29,26 @@ Design (Person B):
 * The returned list is **aligned index-wise** with ``person_bboxes``: a person
   with no matching face keeps its slot with all fields ``None``.
 
+Rejected alternative — chaining MediaPipe's dedicated ``face_detection``
+(BlazeFace) before Face Mesh, to get a tighter face box. It sounds like the
+natural next step after the crop fix, and BlazeFace does beat Face Mesh's
+internal detector on some images, but measured over 236 persons in 12 real
+classroom frames it is clearly worse:
+
+    Face Mesh on the person crop (current)   98 faces   42%
+    two-stage BlazeFace -> Face Mesh, best   58 faces   25%
+    union of both (BlazeFace as fallback)   106 faces   45%
+
+BlazeFace is the bottleneck at classroom distances, and the union buys 3
+percentage points for a second model on every miss — not worth the complexity.
+Tried across ``model_selection`` 0/1, confidence 0.5/0.3/0.2 and padding
+0.25/0.5; every variant lost.
+
+Note 130 of those 236 persons (55%) have no face either method can find. From an
+overhead camera a student bowed over a desk has no face in view, so roughly 45%
+is the ceiling for this angle regardless of model choice. Improving it is a
+camera-placement problem, not a code problem.
+
 This module does not compute head pose (Person C) or track identities
 (Stage 2). Landmarks are the canonical 468 mesh points; the 10 iris points that
 ``refine_landmarks=True`` adds are dropped to match the frozen schema.
