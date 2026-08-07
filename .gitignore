@@ -11,3 +11,13 @@ env/
 .ipynb_checkpoints/
 
 datasets/
+dataset/
+
+# Pipeline output (JSONL can reach megabytes per clip)
+outputs/
+
+# Model weights: ultralytics auto-downloads yolo11m.pt on first use and
+# sixdrepnet fetches its own checkpoint. Never commit them.
+*.pt
+*.pth
+weights/

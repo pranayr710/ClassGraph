@@ -58,7 +58,7 @@ class DetectionConfig:
 class FaceConfig:
     """Person B — MediaPipe Face Mesh settings."""
 
-    max_num_faces: int = 40  # classroom-scale
+    max_num_faces: int = 40  # cap per Face Mesh pass (a crop normally has 1)
     refine_landmarks: bool = True
     min_detection_confidence: float = 0.50
     min_tracking_confidence: float = 0.50
@@ -87,6 +87,29 @@ class FaceConfig:
     # A detected face is bound to a person bbox only if at least this fraction
     # of the face's bounding box lies inside that person's bounding box.
     assign_min_containment: float = 0.50
+
+    # Face Mesh runs on a per-person crop, not the whole frame. MediaPipe's
+    # face detector downscales its input to a small fixed size, so a face that
+    # is small *relative to the frame* is destroyed before detection runs.
+    # Measured on real footage with the whole-frame approach:
+    #   3840x2160 clip, 1 student  -> 0 faces  (per-person crops: 1/1)
+    #   1920x1088 classroom CCTV   -> 0 faces  (per-person crops: 8/20)
+    # Padding added around each person box before cropping, as a fraction of
+    # the box size. Measured to be actively harmful — padding enlarges the crop,
+    # which shrinks the face relative to it and reverses the benefit of
+    # cropping at all. Faces found (5 video frames / 20-person CCTV frame):
+    #   pad 0.15, full body -> 1/5  and  7/20
+    #   pad 0.00, full body -> 5/5  and  8/20   <- default
+    # Cropping only the upper part of the person box was also tried and is
+    # worse on the classroom frame (top 50% -> 5/20, top 30% -> 1/20), because
+    # students bent over desks have their head low in the box. Kept
+    # configurable, but raise it only with measurements to justify it.
+    person_crop_padding: float = 0.0
+
+    # Overlapping person boxes can both see the same physical face. A candidate
+    # whose IoU with an already-assigned face exceeds this is treated as a
+    # duplicate and not assigned twice.
+    duplicate_face_iou: float = 0.50
 
 
 @dataclass(frozen=True)

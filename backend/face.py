@@ -6,10 +6,26 @@ and an eye-aspect-ratio (EAR) value used downstream for drowsiness/attention.
 
 Design (Person B):
 
-* One Face Mesh inference is run over the **whole frame** with
-  ``max_num_faces = config.max_num_faces`` (default 40, classroom scale).
-* Each detected face is then bound to the person bounding box that best
-  contains it (see :data:`FaceConfig.assign_min_containment`).
+* One Face Mesh inference is run per **person crop**, not over the whole frame.
+  MediaPipe's face detector downscales its input to a small fixed size, so a
+  face that is small *relative to the frame* is destroyed before detection can
+  run. Cropping to the person box first restores the face's relative size.
+  Measured on real footage:
+
+  =========================  ==============  =================
+  Input                      Whole frame     Per-person crops
+  =========================  ==============  =================
+  3840x2160 clip, 1 student  0 faces         1 / 1
+  1920x1088 classroom CCTV   0 faces         8 / 20
+  =========================  ==============  =================
+
+* Each crop is padded by :data:`FaceConfig.person_crop_padding` so a head near
+  the box edge is not clipped, and landmarks are mapped back to **image**
+  coordinates.
+* Candidates are assigned greedily by containment, highest score first, so an
+  overlapping pair of person boxes cannot claim the same physical face twice
+  (see :data:`FaceConfig.assign_min_containment` and
+  :data:`FaceConfig.duplicate_face_iou`).
 * The returned list is **aligned index-wise** with ``person_bboxes``: a person
   with no matching face keeps its slot with all fields ``None``.
 
@@ -187,6 +203,27 @@ def _containment(inner: Bbox, outer: Bbox) -> float:
     return inter / inner_area
 
 
+def _iou(a: Bbox, b: Bbox) -> float:
+    """Intersection-over-union of two boxes.
+
+    Args:
+        a: First box ``(x, y, w, h)``.
+        b: Second box ``(x, y, w, h)``.
+
+    Returns:
+        A value in ``[0.0, 1.0]``; ``0.0`` when either box has no area.
+    """
+    ax0, ay0, aw, ah = a
+    bx0, by0, bw, bh = b
+    inter_w = max(0, min(ax0 + aw, bx0 + bw) - max(ax0, bx0))
+    inter_h = max(0, min(ay0 + ah, by0 + bh) - max(ay0, by0))
+    inter = inter_w * inter_h
+    union = aw * ah + bw * bh - inter
+    if union <= 0:
+        return 0.0
+    return inter / union
+
+
 def _coerce_bbox(bbox: Sequence[float]) -> Bbox:
     """Validate and convert an input bbox to an integer ``(x, y, w, h)`` tuple.
 
@@ -291,23 +328,60 @@ class FaceAnalyzer:
             self._mesh.close()
             self._closed = True
 
-    def _detect_faces(
-        self, frame: np.ndarray
-    ) -> list[tuple[Bbox, list[Point], float | None]]:
-        """Run Face Mesh on a full frame and return detected faces.
+    def _padded_region(self, person_box: Bbox, img_w: int, img_h: int) -> Bbox:
+        """Expand a person box by the configured padding, clamped to the image.
 
         Args:
-            frame: A ``(H, W, 3)`` BGR image.
+            person_box: The person box ``(x, y, w, h)`` in image pixels.
+            img_w: Image width in pixels.
+            img_h: Image height in pixels.
 
         Returns:
-            A list of ``(face_bbox, landmarks, ear)`` for every detected face,
-            in the order MediaPipe reports them. Empty if no faces are found.
+            The padded region ``(x, y, w, h)``, clamped to the image bounds.
+            Width/height may be ``0`` when the box lies entirely outside the
+            image.
+        """
+        x, y, w, h = person_box
+        pad_w = int(round(w * self.config.person_crop_padding))
+        pad_h = int(round(h * self.config.person_crop_padding))
+        x0 = max(0, x - pad_w)
+        y0 = max(0, y - pad_h)
+        x1 = min(img_w, x + w + pad_w)
+        y1 = min(img_h, y + h + pad_h)
+        return (x0, y0, max(0, x1 - x0), max(0, y1 - y0))
+
+    def _detect_faces(
+        self, frame: np.ndarray, region: Bbox
+    ) -> list[tuple[Bbox, list[Point], float | None]]:
+        """Run Face Mesh on one crop and return faces in **image** coordinates.
+
+        Cropping before inference is the whole point: MediaPipe downscales its
+        input for face detection, so a face that is small relative to the full
+        frame is lost. Within a person crop the same face is large enough to
+        survive that downscale.
+
+        Args:
+            frame: The full ``(H, W, 3)`` BGR image.
+            region: The already-padded crop region ``(x, y, w, h)`` in image
+                pixels.
+
+        Returns:
+            A list of ``(face_bbox, landmarks, ear)`` for every face detected in
+            the crop, with all coordinates mapped back to image space. Empty if
+            the crop is degenerate or no face is found.
         """
         import cv2
 
         img_h, img_w = frame.shape[:2]
+        rx, ry, rw, rh = region
+        if rw <= 0 or rh <= 0:
+            return []
+        crop = frame[ry : ry + rh, rx : rx + rw]
+        if crop.size == 0:
+            return []
+
         # MediaPipe expects RGB; OpenCV frames are BGR.
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
         results = self._mesh.process(rgb)
 
         multi = getattr(results, "multi_face_landmarks", None)
@@ -317,8 +391,9 @@ class FaceAnalyzer:
         n = self.config.num_landmarks
         faces: list[tuple[Bbox, list[Point], float | None]] = []
         for face_landmarks in multi:
+            # Landmarks are normalised to the crop; map them back to the image.
             pts: list[Point] = [
-                (lm.x * img_w, lm.y * img_h) for lm in face_landmarks.landmark[:n]
+                (rx + lm.x * rw, ry + lm.y * rh) for lm in face_landmarks.landmark[:n]
             ]
             if len(pts) < n:
                 # Model returned fewer points than expected — skip defensively.
@@ -369,35 +444,47 @@ class FaceAnalyzer:
         if not boxes:
             return []
 
-        faces = self._detect_faces(frame)
+        img_h, img_w = frame.shape[:2]
 
-        # Greedy assignment: each person takes the still-unused face with the
-        # highest containment above threshold. Deterministic in input order.
-        used = [False] * len(faces)
+        # One Face Mesh pass per person crop. Collect every (person, face)
+        # candidate that clears the containment threshold.
+        candidates: list[tuple[float, int, tuple[Bbox, list[Point], float | None]]] = []
+        detected = 0
+        for person_idx, person_box in enumerate(boxes):
+            region = self._padded_region(person_box, img_w, img_h)
+            for face in self._detect_faces(frame, region):
+                detected += 1
+                score = _containment(face[0], person_box)
+                if score >= self.config.assign_min_containment:
+                    candidates.append((score, person_idx, face))
+
+        # Greedy assignment, best containment first. Ties break on person index
+        # so the result is deterministic. A face already claimed by another
+        # person (overlapping boxes see the same head) is not reused.
+        candidates.sort(key=lambda c: (-c[0], c[1]))
+        assigned: dict[int, tuple[Bbox, list[Point], float | None]] = {}
+        taken: list[Bbox] = []
+        for score, person_idx, face in candidates:
+            if person_idx in assigned:
+                continue
+            if any(_iou(face[0], t) > self.config.duplicate_face_iou for t in taken):
+                continue
+            assigned[person_idx] = face
+            taken.append(face[0])
+
         results: list[FaceResult] = []
-        for person_box in boxes:
-            best_i = -1
-            best_score = 0.0
-            for i, (face_bbox, _pts, _ear) in enumerate(faces):
-                if used[i]:
-                    continue
-                score = _containment(face_bbox, person_box)
-                if score > best_score:
-                    best_score = score
-                    best_i = i
-
-            if best_i >= 0 and best_score >= self.config.assign_min_containment:
-                used[best_i] = True
-                face_bbox, pts, ear = faces[best_i]
-                results.append(FaceResult(face_bbox=face_bbox, landmarks=pts, ear=ear))
-            else:
+        for person_idx in range(len(boxes)):
+            face = assigned.get(person_idx)
+            if face is None:
                 results.append(FaceResult(face_bbox=None, landmarks=None, ear=None))
+            else:
+                face_bbox, pts, ear = face
+                results.append(FaceResult(face_bbox=face_bbox, landmarks=pts, ear=ear))
 
-        matched = sum(1 for r in results if r.landmarks is not None)
         logger.debug(
-            "analyze: %d persons, %d faces detected, %d matched.",
+            "analyze: %d persons, %d faces detected across crops, %d matched.",
             len(boxes),
-            len(faces),
-            matched,
+            detected,
+            len(assigned),
         )
         return results
