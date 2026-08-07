@@ -148,6 +148,42 @@ class HeadPoseConfig:
 
 
 @dataclass(frozen=True)
+class PostureConfig:
+    """Exploratory — body-pose keypoints as a signal independent of a face.
+
+    Not part of the frozen Stage 1 contract (schema.json has no posture field)
+    and not wired into integrate.py's output. See backend/posture.py's module
+    docstring for why this exists and what it deliberately does NOT claim.
+    """
+
+    model_complexity: int = 1
+    static_image_mode: bool = True
+
+    # Recovery of a faceless person's pose keypoints, measured across 167
+    # faceless persons in 13 real classroom images:
+    #   0.2 -> 111/167 (66%)
+    #   0.3 -> 94/167  (56%)   <- chosen: the value actually hand-checked
+    #   0.5 (MediaPipe's own default) -> 46/167 (28%)
+    #   0.7 -> 18/167  (11%)
+    # 0.2 recovers more but was not hand-verified against the real images the
+    # way 0.3 was (see the module docstring's montage review) — raise it only
+    # after doing the same check.
+    min_detection_confidence: float = 0.3
+
+    # MediaPipe Pose's 33-point landmark indices (BlazePose topology) used
+    # here. Config-driven per the project's no-magic-numbers rule, though
+    # these are fixed by the model, not tunable.
+    nose_idx: int = 0
+    left_shoulder_idx: int = 11
+    right_shoulder_idx: int = 12
+    left_hip_idx: int = 23
+    right_hip_idx: int = 24
+
+    # A landmark is reported only if its MediaPipe visibility meets this.
+    keypoint_min_visibility: float = 0.5
+
+
+@dataclass(frozen=True)
 class TrackingConfig:
     """Stage 2 — ByteTrack settings, filling the ``track_id`` field Stage 1 always leaves ``null``.
 
@@ -205,6 +241,7 @@ class Config:
     detection: DetectionConfig = field(default_factory=DetectionConfig)
     face: FaceConfig = field(default_factory=FaceConfig)
     headpose: HeadPoseConfig = field(default_factory=HeadPoseConfig)
+    posture: PostureConfig = field(default_factory=PostureConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
 

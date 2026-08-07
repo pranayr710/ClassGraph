@@ -2,7 +2,7 @@
 
 Drop images here to turn skipped/failing fixture-dependent tests into real runs.
 
-## `frontal_face.jpg` — enables 3 tests
+## `frontal_face.jpg` — enables 4 tests
 
 A single clear, **frontal** face image satisfies every fixture-dependent test:
 
@@ -11,6 +11,11 @@ A single clear, **frontal** face image satisfies every fixture-dependent test:
 | `test_single_face_returns_468_landmarks` | `test_face.py` | a face MediaPipe Face Mesh can detect |
 | `test_ear_in_valid_range_on_face` | `test_face.py` | eyes open (asserts `0.05 <= ear <= 0.5`) |
 | `test_frontal_face_returns_teacher` | `test_headpose.py` | facing the lens (asserts `\|yaw\| < 15`) |
+| `test_keypoints_detected_on_body_fixture` | `test_posture.py` | a visible torso (nose + both shoulders) |
+
+The same image happens to satisfy the posture test too, since it was framed as
+a head-and-shoulders portrait (margin 1.5x the face box) rather than a tight
+face crop — see the git history of this file for why that margin was chosen.
 
 Requirements: one face looking straight at the camera, eyes open, well lit, and
 **large in the frame**. A plain selfie works well.
