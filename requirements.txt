@@ -18,7 +18,11 @@ torchvision>=0.17,<1.0
 mediapipe==0.10.21
 
 # SixDRepNet (Person C)
-sixdrepnet>=0.1.7
+# NOTE: 0.1.6 is the newest release on PyPI (the previous `>=0.1.7` pin was
+# unsatisfiable and blocked the whole file from resolving). Pulls matplotlib,
+# pandas and scipy transitively; its own `torch>=1.10.1` is satisfied by the
+# CUDA build installed separately, so it will not replace it.
+sixdrepnet>=0.1.6,<0.2
 
 # Integration + CLI (Day 4)
 tqdm>=4.66
