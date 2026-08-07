@@ -37,8 +37,16 @@ class DetectionConfig:
     weights: str = "yolo11m.pt"  # ultralytics auto-downloads if missing
     device: Literal["cuda", "cpu", "auto"] = "auto"
 
-    # Confidence thresholds
-    person_conf: float = 0.40
+    # Confidence thresholds.
+    # person_conf lowered from 0.40: distant back-row students score low, and
+    # for engagement statistics a missed student costs more than a stray box.
+    person_conf: float = 0.30
+    # object_conf left at 0.35 deliberately. Raising it to 0.50 cuts "laptop"
+    # detections from 19 to 6 across the sample set, but that is not a pure
+    # false-positive win: img04 is a computer lab where the laptops are real,
+    # while img01 is an ordinary classroom where they are not. One global
+    # threshold cannot separate those cases — tune this only against labelled
+    # ground truth.
     object_conf: float = 0.35
 
     # NMS IoU
@@ -47,8 +55,18 @@ class DetectionConfig:
     # COCO class names we care about (person auto-included)
     object_whitelist: tuple[str, ...] = ("cell phone", "laptop", "book")
 
-    # Optional input resize (None = native resolution)
-    imgsz: int = 960
+    # Inference resolution. YOLO resizes the frame to this before inference, so
+    # it directly controls whether distant students survive. Raised from 960:
+    # at 960 a back-row student ~60 px tall in a 1920-wide frame shrinks to
+    # ~30 px and is lost. Persons detected across 12 classroom images
+    # (person_conf=0.30), with per-image latency on an RTX 4050:
+    #    960 -> 175 persons,  34 ms
+    #   1280 -> 236 persons,  50 ms   <- chosen
+    #   1536 -> 271 persons,  72 ms
+    #   1920 -> 301 persons,  86 ms
+    # Higher keeps helping, but 1280 captures most of the gain at 1.5x cost.
+    # Raise it for offline batch runs where latency does not matter.
+    imgsz: int = 1280
 
     # Batch size when running on video frames
     batch_size: int = 1
