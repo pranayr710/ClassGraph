@@ -17,6 +17,13 @@ Required coverage:
     1. End-to-end on a 5-second fixture video -> valid JSONL matching schema.
     2. --sample-rate 5 produces ~1/5 the lines of --sample-rate 1.
     3. Stage 2: a continuously-visible person keeps one stable track_id.
+    4. Two separate process_video() calls never share track identity when no
+       tracker is injected -- this is the code-level boundary between
+       "attention analytics" and persistent facial recognition (see
+       backend.tracking's module docstring); it needs a real test, not just
+       a comment, given the regulatory precedent behind it (Sweden's first
+       GDPR fine targeted exactly a school system that persisted identity
+       across sessions).
 """
 
 from __future__ import annotations
@@ -50,10 +57,13 @@ _FIXTURE_W, _FIXTURE_H = 160, 120
 
 
 class _FakeDetector:
-    """Returns one person and one object on every frame."""
+    """Returns one person and one object on every frame, at a fixed bbox."""
+
+    def __init__(self, bbox: tuple[int, int, int, int] = (20, 15, 60, 80)) -> None:
+        self._bbox = bbox
 
     def detect(self, frame: np.ndarray) -> tuple[list[Person], list[Obj]]:
-        persons = [Person(bbox=(20, 15, 60, 80), confidence=0.92)]
+        persons = [Person(bbox=self._bbox, confidence=0.92)]
         objects = [Obj(cls="laptop", bbox=(5, 5, 30, 20), confidence=0.77)]
         return persons, objects
 
@@ -96,13 +106,18 @@ class _FakePostureAnalyzer:
     def analyze(self, frame: np.ndarray, person_bboxes) -> list[PostureResult]:
         results: list[PostureResult] = []
         for x, y, w, h in person_bboxes:
+            l_sh = (float(x + w * 0.3), float(y + h * 0.3))
+            r_sh = (float(x + w * 0.7), float(y + h * 0.3))
             results.append(
                 PostureResult(
                     keypoints_detected=True,
                     nose=(float(x + w / 2), float(y + h * 0.1)),
+                    left_shoulder=l_sh,
+                    right_shoulder=r_sh,
                     shoulder_mid=(float(x + w / 2), float(y + h * 0.3)),
                     hip_mid=(float(x + w / 2), float(y + h * 0.7)),
                     vertical_lean=-0.2,
+                    facing_direction=(0.0, -1.0),
                 )
             )
         return results
@@ -125,14 +140,20 @@ def _make_fixture_video(path: Path, n_frames: int) -> int:
     return n_frames
 
 
-def _fakes() -> dict:
+def _fakes(bbox: tuple[int, int, int, int] = (20, 15, 60, 80)) -> dict:
     """Injected-estimator kwargs for process_video.
 
     ``person_tracker`` is deliberately absent: process_video builds a real
     ``PersonTracker`` (see the module docstring for why that's safe here).
+
+    Args:
+        bbox: The fake detector's fixed person bbox. Overridden by the
+            session-identity tests so two "videos" place their person at
+            different positions, which is what makes tracker reuse without
+            ``.reset()`` observably different from a fresh tracker.
     """
     return {
-        "detector": _FakeDetector(),
+        "detector": _FakeDetector(bbox=bbox),
         "face_analyzer": _FakeFaceAnalyzer(),
         "headpose_estimator": _FakeHeadPose(),
         "posture_analyzer": _FakePostureAnalyzer(),
@@ -181,6 +202,107 @@ def test_end_to_end_valid_jsonl(schema: dict, tmp_path: Path) -> None:
         assert person["posture"]["nose"] is not None
         assert person["posture"]["vertical_lean"] == pytest.approx(-0.2)
         assert record["objects"][0]["cls"] == "laptop"
+
+
+def test_two_videos_never_share_track_identity(tmp_path: Path) -> None:
+    """Two separate process_video() calls, no tracker injected, never leak
+    track identity between them -- the default/safe path.
+
+    Uses a different bbox for each "video" so a leak would be observable
+    (see test_reusing_one_tracker_without_reset_does_leak_identity for why
+    an identical bbox cannot distinguish a fresh tracker from a reused one:
+    ByteTrack would match the still-alive old track by position and land on
+    id 1 either way, coincidentally, for the wrong reason).
+
+    This is not just a Stage 2 numbering detail: it is the code-level
+    boundary between "attention analytics" (identity is scoped to one
+    session) and persistent facial recognition (identity survives across
+    sessions), which several jurisdictions regulate or ban outright in
+    schools -- see CHALLENGES_AND_SOLUTIONS.md and the "Reading the Room"
+    research this implements a guardrail from.
+    """
+    n_frames = _FIXTURE_FPS * _FIXTURE_SECONDS
+    video_a = tmp_path / "clip_a.mp4"
+    video_b = tmp_path / "clip_b.mp4"
+    _make_fixture_video(video_a, n_frames)
+    _make_fixture_video(video_b, n_frames)
+
+    out_a = tmp_path / "a.jsonl"
+    out_b = tmp_path / "b.jsonl"
+    # No person_tracker= passed to either call: process_video must build a
+    # fresh one each time (see backend.integrate._build_person_tracker).
+    process_video(video_a, out_a, CONFIG, **_fakes(bbox=(20, 15, 60, 80)))
+    process_video(video_b, out_b, CONFIG, **_fakes(bbox=(400, 300, 60, 80)))
+
+    first_id_a = json.loads(out_a.read_text(encoding="utf-8").splitlines()[0])[
+        "persons"
+    ][0]["track_id"]
+    first_id_b = json.loads(out_b.read_text(encoding="utf-8").splitlines()[0])[
+        "persons"
+    ][0]["track_id"]
+
+    # A properly fresh tracker gets the frame-1 instant-activation bonus
+    # (see backend.tracking's module docstring) regardless of bbox position,
+    # so both independent sessions confirm their first person immediately,
+    # both numbered starting from 1.
+    assert first_id_a == 1
+    assert first_id_b == 1
+
+
+def test_reusing_one_tracker_without_reset_does_leak_identity(tmp_path: Path) -> None:
+    """The one real gap: deliberately reusing a PersonTracker across videos
+    without calling .reset() is NOT guarded against, and does leak state.
+
+    Video B's person appears at a bbox far from video A's, so the leak is
+    observable: a genuinely fresh tracker would instant-activate it as id 1
+    on its first frame (the frame-1 bonus applies to whatever bbox shows up
+    first). A tracker that was never reset is no longer on its own frame 1
+    -- it is several videos'-worth of frames into a single continuous
+    ByteTrack sequence -- so video B's person, appearing at an unrelated
+    position, gets no such bonus and starts unconfirmed like any new
+    detection mid-sequence, exactly as if it were just another person
+    walking into frame partway through video A.
+
+    This test exists to make that contract concrete and testable, not just a
+    warning in a docstring. Anyone injecting person_tracker= across more than
+    one process_video() call must call .reset() themselves in between.
+    """
+    from backend.tracking import PersonTracker
+
+    n_frames = _FIXTURE_FPS * _FIXTURE_SECONDS
+    video_a = tmp_path / "clip_a.mp4"
+    video_b = tmp_path / "clip_b.mp4"
+    _make_fixture_video(video_a, n_frames)
+    _make_fixture_video(video_b, n_frames)
+
+    shared_tracker = PersonTracker()
+    out_a = tmp_path / "a.jsonl"
+    out_b = tmp_path / "b.jsonl"
+    process_video(
+        video_a,
+        out_a,
+        CONFIG,
+        person_tracker=shared_tracker,
+        **_fakes(bbox=(20, 15, 60, 80)),
+    )
+    # Deliberately no shared_tracker.reset() here -- this is the misuse case.
+    process_video(
+        video_b,
+        out_b,
+        CONFIG,
+        person_tracker=shared_tracker,
+        **_fakes(bbox=(400, 300, 60, 80)),
+    )
+
+    first_id_b = json.loads(out_b.read_text(encoding="utf-8").splitlines()[0])[
+        "persons"
+    ][0]["track_id"]
+    # No frame-1 bonus available (the shared tracker's internal frame counter
+    # is already well past 1) -- video B's person is treated as an ordinary
+    # mid-sequence sighting and comes back unconfirmed, not instantly id 1.
+    # That is the leak: the session boundary this student's "arrival" should
+    # have marked was invisible to the tracker.
+    assert first_id_b is None
 
 
 def test_sample_rate_reduces_line_count(tmp_path: Path) -> None:

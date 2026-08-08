@@ -58,6 +58,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -86,6 +87,13 @@ class PostureResult:
         keypoints_detected: Whether MediaPipe Pose found a body in the crop at
             all. ``False`` means every other field is ``None``.
         nose: The nose keypoint, or ``None``.
+        left_shoulder: The subject's own left shoulder (MediaPipe landmark
+            11), or ``None`` if its visibility is too low. For a person
+            facing the camera this appears on the image's right side (a
+            mirror effect), not the image's left.
+        right_shoulder: The subject's own right shoulder (landmark 12), or
+            ``None``. Appears on the image's left side when facing the
+            camera.
         shoulder_mid: Midpoint of the two shoulder keypoints, or ``None`` if
             either shoulder's visibility is too low.
         hip_mid: Midpoint of the two hip keypoints, or ``None`` if either
@@ -99,13 +107,69 @@ class PostureResult:
             from an elevated camera, this correlates loosely with leaning
             forward); do not threshold it into a semantic class without new
             validation.
+        facing_direction: A unit vector `(dx, dy)` in the image plane,
+            perpendicular to the shoulder line, intended to approximate which
+            way the torso is turned as projected onto the image -- or
+            ``None`` if either shoulder is unavailable. **The sign (which of
+            the two perpendiculars) is an unconfirmed guess, not a validated
+            convention.** The plan was to fix it by inspecting real images
+            with people at known orientations, but the real classroom images
+            available mostly show people from behind/above with heads down
+            (the same camera-angle limitation documented throughout this
+            project) -- the one clear, unoccluded candidate (a standing
+            teacher) only had one shoulder pass the visibility threshold, so
+            there was no reliable example to check the sign against. Also
+            degenerate for a person facing straight at the camera regardless
+            of sign (their true facing direction then runs along the depth
+            axis, which has no projection onto the image plane). Because of
+            this, :mod:`backend.peer_interaction` deliberately does NOT use
+            this field for its core pairing logic -- it uses the shoulder
+            line's undirected orientation instead, which has no front/back
+            ambiguity to get wrong. Kept here as a documented, honestly
+            unconfirmed feature for future validation, not a ready-to-use
+            signal.
     """
 
     keypoints_detected: bool
     nose: Point | None
+    left_shoulder: Point | None
+    right_shoulder: Point | None
     shoulder_mid: Point | None
     hip_mid: Point | None
     vertical_lean: float | None
+    facing_direction: Point | None
+
+
+def _facing_direction(
+    left_shoulder: Point | None, right_shoulder: Point | None
+) -> Point | None:
+    """Approximate torso-facing direction, projected onto the image plane.
+
+    Perpendicular to the shoulder line. The sign (which of the two
+    perpendiculars) is an unconfirmed guess -- rendering it on real
+    classroom images to pick the correct one turned out to be inconclusive
+    (see :data:`PostureResult.facing_direction`'s docstring for why). Do not
+    rely on the sign of this output; :mod:`backend.peer_interaction` uses the
+    shoulder line's undirected orientation instead for exactly this reason.
+
+    Args:
+        left_shoulder: The subject's own left shoulder, or ``None``.
+        right_shoulder: The subject's own right shoulder, or ``None``.
+
+    Returns:
+        A unit vector ``(dx, dy)``, or ``None`` if either input is ``None``
+        or the shoulders are coincident (zero-length shoulder line).
+    """
+    if left_shoulder is None or right_shoulder is None:
+        return None
+    dx = right_shoulder[0] - left_shoulder[0]
+    dy = right_shoulder[1] - left_shoulder[1]
+    length = math.hypot(dx, dy)
+    if length == 0.0:
+        return None
+    # Perpendicular to (dx, dy), picked as (dy, -dx) per the visual check
+    # described above.
+    return (dy / length, -dx / length)
 
 
 def _coerce_bbox(bbox: Sequence[float]) -> Bbox:
@@ -270,9 +334,12 @@ class PostureAnalyzer:
         empty = PostureResult(
             keypoints_detected=False,
             nose=None,
+            left_shoulder=None,
+            right_shoulder=None,
             shoulder_mid=None,
             hip_mid=None,
             vertical_lean=None,
+            facing_direction=None,
         )
 
         results: list[PostureResult] = []
@@ -321,13 +388,18 @@ class PostureAnalyzer:
             if nose is not None and shoulder_mid is not None and region[3] > 0:
                 vertical_lean = (nose[1] - shoulder_mid[1]) / region[3]
 
+            facing_direction = _facing_direction(l_sh, r_sh)
+
             results.append(
                 PostureResult(
                     keypoints_detected=True,
                     nose=nose,
+                    left_shoulder=l_sh,
+                    right_shoulder=r_sh,
                     shoulder_mid=shoulder_mid,
                     hip_mid=hip_mid,
                     vertical_lean=vertical_lean,
+                    facing_direction=facing_direction,
                 )
             )
 

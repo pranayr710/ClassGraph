@@ -25,7 +25,7 @@ cv2 = pytest.importorskip("cv2")
 # Importing backend.posture does NOT import mediapipe (lazy, inside
 # PostureAnalyzer), so any pure-logic tests here would run without it.
 from backend.config import CONFIG
-from backend.posture import PostureAnalyzer, PostureResult
+from backend.posture import PostureAnalyzer, PostureResult, _facing_direction
 
 _FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -103,7 +103,12 @@ def test_keypoints_detected_on_body_fixture(analyzer: PostureAnalyzer) -> None:
     nx, ny = result.nose
     assert 0.0 <= nx <= w
     assert 0.0 <= ny <= h
+    assert result.left_shoulder is not None
+    assert result.right_shoulder is not None
     assert result.shoulder_mid is not None
+    assert result.facing_direction is not None
+    fx, fy = result.facing_direction
+    assert pytest.approx(fx**2 + fy**2, abs=1e-6) == 1.0  # unit vector
 
 
 def test_result_length_matches_input(analyzer: PostureAnalyzer) -> None:
@@ -118,9 +123,12 @@ def test_result_length_matches_input(analyzer: PostureAnalyzer) -> None:
         assert isinstance(result, PostureResult)
         assert result.keypoints_detected is False
         assert result.nose is None
+        assert result.left_shoulder is None
+        assert result.right_shoulder is None
         assert result.shoulder_mid is None
         assert result.hip_mid is None
         assert result.vertical_lean is None
+        assert result.facing_direction is None
 
 
 def test_empty_bboxes_returns_empty_list(analyzer: PostureAnalyzer) -> None:
@@ -149,3 +157,41 @@ def test_degenerate_region_returns_empty(analyzer: PostureAnalyzer) -> None:
     results = analyzer.analyze(black, [(500, 500, 20, 20)])
     assert len(results) == 1
     assert results[0].keypoints_detected is False
+
+
+# --------------------------------------------------------------------------- #
+# _facing_direction — pure geometry, no model needed.
+#
+# Only the MAGNITUDE/perpendicularity is asserted, never a specific sign:
+# which of the two perpendiculars is "correct" is explicitly unconfirmed
+# (see PostureResult.facing_direction's docstring) -- real-image validation
+# was inconclusive given this project's camera angle. Asserting a sign here
+# would encode a guess as if it were a spec.
+# --------------------------------------------------------------------------- #
+
+
+def test_facing_direction_is_unit_length() -> None:
+    result = _facing_direction((0.0, 0.0), (10.0, 0.0))
+    assert result is not None
+    dx, dy = result
+    assert pytest.approx(dx**2 + dy**2, abs=1e-9) == 1.0
+
+
+def test_facing_direction_is_perpendicular_to_shoulder_line() -> None:
+    left, right = (0.0, 0.0), (10.0, 4.0)
+    result = _facing_direction(left, right)
+    assert result is not None
+    shoulder_dx, shoulder_dy = right[0] - left[0], right[1] - left[1]
+    dot = result[0] * shoulder_dx + result[1] * shoulder_dy
+    assert pytest.approx(dot, abs=1e-9) == 0.0  # perpendicular vectors dot to zero
+
+
+def test_facing_direction_none_when_shoulder_missing() -> None:
+    assert _facing_direction(None, (10.0, 0.0)) is None
+    assert _facing_direction((0.0, 0.0), None) is None
+    assert _facing_direction(None, None) is None
+
+
+def test_facing_direction_none_when_shoulders_coincident() -> None:
+    """Zero-length shoulder line has no defined perpendicular."""
+    assert _facing_direction((5.0, 5.0), (5.0, 5.0)) is None

@@ -108,15 +108,21 @@
         "posture": {
           "type": ["object", "null"],
           "description": "Raw body-pose geometry (backend/posture.py). NOT a posture or engagement classification -- see that module's docstring for why a bowed/upright label was tried and rejected as unvalidated. null when MediaPipe Pose found no body in the person's crop.",
-          "required": ["nose", "shoulder_mid", "hip_mid", "vertical_lean"],
+          "required": ["nose", "left_shoulder", "right_shoulder", "shoulder_mid", "hip_mid", "vertical_lean", "facing_direction"],
           "additionalProperties": false,
           "properties": {
             "nose": { "oneOf": [{ "$ref": "#/$defs/landmark" }, { "type": "null" }] },
+            "left_shoulder": { "oneOf": [{ "$ref": "#/$defs/landmark" }, { "type": "null" }] },
+            "right_shoulder": { "oneOf": [{ "$ref": "#/$defs/landmark" }, { "type": "null" }] },
             "shoulder_mid": { "oneOf": [{ "$ref": "#/$defs/landmark" }, { "type": "null" }] },
             "hip_mid": { "oneOf": [{ "$ref": "#/$defs/landmark" }, { "type": "null" }] },
             "vertical_lean": {
               "type": ["number", "null"],
               "description": "nose.y - shoulder_mid.y, normalised by crop height. A raw feature, not a validated bowed/upright signal."
+            },
+            "facing_direction": {
+              "oneOf": [{ "$ref": "#/$defs/landmark" }, { "type": "null" }],
+              "description": "Unit vector perpendicular to the shoulder line. Sign is an UNCONFIRMED guess -- real-image validation was inconclusive given this project's camera angle. Do not rely on its sign."
             }
           }
         }

@@ -171,11 +171,14 @@ def _posture_to_json(posture: PostureResult | None) -> dict | None:
         return None
     return {
         "nose": _point_to_json(posture.nose),
+        "left_shoulder": _point_to_json(posture.left_shoulder),
+        "right_shoulder": _point_to_json(posture.right_shoulder),
         "shoulder_mid": _point_to_json(posture.shoulder_mid),
         "hip_mid": _point_to_json(posture.hip_mid),
         "vertical_lean": (
             None if posture.vertical_lean is None else float(posture.vertical_lean)
         ),
+        "facing_direction": _point_to_json(posture.facing_direction),
     }
 
 

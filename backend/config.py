@@ -255,6 +255,55 @@ class AttentionConfig:
 
 
 @dataclass(frozen=True)
+class PeerInteractionConfig:
+    """Exploratory -- pairwise "peer-oriented" detection between students.
+
+    Not part of the frozen Stage 1 contract; reads finished Stage 1+2 JSONL
+    like backend.attention does. See backend/peer_interaction.py's module
+    docstring for the F-formation research this operationalises, and what
+    it deliberately does not claim (it detects joint physical orientation
+    between two tracked students, never whether their interaction is
+    academically productive or off-task -- that distinction is not
+    recoverable from vision alone per the CSCL literature this implements a
+    decision from).
+
+    Every threshold below is an engineering default, not one measured for
+    this exact system -- there is no labelled peer-interaction ground truth
+    to calibrate against yet. Validate before trusting the output.
+    """
+
+    # Two people count as "at conversational distance" if the shorter of
+    # their two bbox widths, scaled by this factor, exceeds the gap between
+    # their bboxes. Scale-relative (not a fixed pixel count) so it holds
+    # across near/far students in the same frame.
+    max_gap_to_width_ratio: float = 1.5
+
+    # How close each person's shoulder-line orientation must be to
+    # "perpendicular to the line connecting them" to count as oriented
+    # toward each other this frame, in degrees. Wide on purpose: Kendon's
+    # F-formations include both vis-a-vis (face-to-face) and L-shaped
+    # (cooperative, common in classroom side-by-side seating) arrangements,
+    # and the shoulder-line-orientation test used here (see the module
+    # docstring for why it is undirected, sidestepping the front/back
+    # ambiguity in a single shoulder line) is a coarse proxy for either.
+    orientation_tolerance_degrees: float = 35.0
+
+    # Rolling window before judging a pair, and majority fraction of that
+    # window required to count the pair as currently oriented toward each
+    # other. Same rationale as backend.attention's windowing: Kendon's own
+    # turn-taking research shows real conversation has intermittent gaze,
+    # so a momentary break must not reset a genuine pairing.
+    window_seconds: float = 15.0
+    majority_fraction: float = 0.5
+
+    # How long a pair must stay majority-oriented before being reported at
+    # all. Deliberately not tied to backend.attention's sustained_seconds:
+    # this is reporting a detected joint orientation, not a sustained
+    # concern, so it can surface sooner.
+    sustained_seconds: float = 20.0
+
+
+@dataclass(frozen=True)
 class TrackingConfig:
     """Stage 2 — ByteTrack settings, filling the ``track_id`` field Stage 1 always leaves ``null``.
 
@@ -314,6 +363,9 @@ class Config:
     headpose: HeadPoseConfig = field(default_factory=HeadPoseConfig)
     posture: PostureConfig = field(default_factory=PostureConfig)
     attention: AttentionConfig = field(default_factory=AttentionConfig)
+    peer_interaction: PeerInteractionConfig = field(
+        default_factory=PeerInteractionConfig
+    )
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
 

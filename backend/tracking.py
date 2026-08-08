@@ -7,6 +7,25 @@ fresh :meth:`PersonTracker.reset`) must be created once per video, because
 ByteTrack carries Kalman-filter state and a lost-track buffer across frames of
 one continuous sequence, and its ID counter starts over at construction.
 
+This boundary is more than a numbering detail. ``track_id`` here is assigned
+from motion/IoU only -- there is no appearance embedding or face-recognition
+model anywhere in this codebase (verified by inspection, not assumed), so
+identity can never survive past the ``PersonTracker`` instance it was
+computed in. As long as callers follow the contract above (fresh instance, or
+an explicit ``.reset()``, per video), this is the code-level line between
+"attention analytics" scoped to one session and persistent facial
+recognition across sessions -- the latter is what several jurisdictions
+regulate or ban outright in schools (e.g. Sweden's first-ever GDPR fine
+targeted a school system that persisted identity across sessions; New York
+State banned facial recognition in schools statewide). ``process_video`` in
+``integrate.py`` always builds a fresh tracker when none is injected, so the
+default path is safe by construction; a caller who injects and reuses one
+``PersonTracker`` across more than one video is responsible for calling
+``.reset()`` between them -- ``test_reusing_one_tracker_without_reset_does_leak_identity``
+in ``tests/test_integrate.py`` demonstrates exactly what happens if they
+don't, so this is an enforced, tested contract rather than a comment someone
+could miss.
+
 This module does not detect people (Person A) or bind faces/pose to them —
 it only assigns identity continuity to the ``persons`` list ``detection.py``
 already produced, frame by frame.
