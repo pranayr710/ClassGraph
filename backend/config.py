@@ -304,6 +304,41 @@ class PeerInteractionConfig:
 
 
 @dataclass(frozen=True)
+class FairnessAuditConfig:
+    """Exploratory -- tooling for a demographic accuracy audit, and a
+    confound diagnostic that needs no labels at all.
+
+    See backend/fairness_audit.py's module docstring for the research this
+    is grounded in: a real, primary-source check found MediaPipe Face Mesh
+    has a published Google fairness model card (tested across Fitzpatrick
+    skin tone AND a "Southern Asia" geographic bucket -- this project's
+    actual population), while SixDRepNet has zero published fairness
+    evaluation of any kind. Neither has been tested by anyone, anywhere,
+    against South Asian faces specifically. This module cannot fill that gap
+    without labelled data this project does not yet have -- it makes running
+    that audit mechanical once such data exists, and runs the cheaper
+    confound diagnostic the research recommends doing first.
+    """
+
+    # Fitzpatrick I-VI, matching Google's own MediaPipe Face Mesh fairness
+    # card exactly, so any future ClassGraph audit is directly comparable to
+    # published numbers rather than using an incompatible scale. Labels
+    # should come from trained human annotation, not an automated classifier
+    # -- the one academic study found using automated race/skin-tone labels
+    # (WFLW's "Indian" subgroup, via a FairFace+CLIP ensemble) is flagged in
+    # that same research as a source of label noise, not a shortcut to trust.
+    skin_tone_scale: tuple[str, ...] = ("I", "II", "III", "IV", "V", "VI")
+
+    # Resolution buckets (shorter image side, in pixels) for the label-free
+    # confound diagnostic. A 2026 academic audit of a different landmark
+    # model found image resolution alone explained 29.3% of landmark-error
+    # variance -- the single largest factor found, ahead of any demographic
+    # one -- which is why this is checked before any skin-tone-labelled
+    # audit is attempted.
+    resolution_bucket_edges: tuple[int, ...] = (480, 720, 1080)
+
+
+@dataclass(frozen=True)
 class TrackingConfig:
     """Stage 2 — ByteTrack settings, filling the ``track_id`` field Stage 1 always leaves ``null``.
 
@@ -366,6 +401,7 @@ class Config:
     peer_interaction: PeerInteractionConfig = field(
         default_factory=PeerInteractionConfig
     )
+    fairness_audit: FairnessAuditConfig = field(default_factory=FairnessAuditConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
 

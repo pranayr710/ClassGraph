@@ -29,6 +29,65 @@ of analysis:
 Full sourcing for all of the above lives in the "Reading the Room" research
 artifact this module implements decisions from.
 
+Grounding the taxonomy itself, not just the windowing: a field-wide critical
+review (Khan, Abedi & Colella, 2022/23) found most engagement-detection
+systems invent their own ad hoc category scheme rather than grounding it in
+a validated educational-psychology instrument -- exactly the failure mode to
+avoid here. A follow-up research pass checked ORIENTATION (the six
+categories below) against real, published classroom-observation instruments
+from school psychology, rather than treating "we made these up but they
+sound reasonable" as good enough:
+
+* BOSS (Behavioral Observation of Students in Schools -- Shapiro; reviewed
+  alongside six sibling instruments in Volpe, DiPerna, Hintze & Shapiro,
+  2005, School Psychology Review 34(4)) is a published, validated,
+  individual-student momentary-time-sampling instrument with almost exactly
+  this shape: Active/Passive Engaged Time (on-task) vs. Off-task
+  Motor/Verbal/Passive. Its standard sampling interval is 15 seconds, with
+  dedicated methodological work (Zakszeski, Hojnoski & Wood, 2017) finding
+  shorter momentary intervals (5-15s) track continuous observation most
+  accurately -- an independent confirmation of this module's
+  ``window_seconds = 15.0`` default that has nothing to do with the
+  mind-wandering literature above, which is worth having two unrelated
+  sources agree on.
+* DBR (Direct Behavior Rating -- Chafouleas, Riley-Tillman et al.) defines
+  "Academic Engagement" as essentially BOSS's two on-task categories
+  collapsed into one, rated per observation period rather than per interval
+  -- a weaker direct fit for frame-level output, useful mainly as a
+  convergent secondary reference.
+* CLASS (Pianta, La Paro & Hamre) was also checked and is a poor fit for
+  THIS taxonomy specifically: its engagement dimension is a single holistic
+  rating for the whole classroom over 15-25 minutes, not a per-student
+  behavioural code -- the right instrument if this project ever adds
+  classroom-climate features, the wrong one for what this module does.
+
+Proposed mapping (a recommendation for the team to review, not a renaming
+already applied to the code below -- category identifiers are unchanged):
+
+    ClassGraph category      BOSS category                          Fit
+    attending_teacher    ->  Passive Engaged Time                   clean but partial
+    oriented_away         -> Off-task Passive (if sustained, and    forced -- BOSS's
+                              not sanctioned peer talk)               own exception
+                                                                       needs audio too
+    head_down_with_device -> Off-task Motor                         reasonably clean
+    head_down_no_device   -> ambiguous: Active Engaged Time         NO clean mapping
+                              (silent reading/writing) OR             exists -- see below
+                              Off-task Passive
+    posture_only          -> no BOSS analogue (CV artifact)         n/a
+    no_signal              -> no BOSS analogue (CV artifact)         n/a
+
+The one honestly unresolved cell, ``head_down_no_device``, is not a gap
+unique to this project: BOSS's own two hardest categories to tell apart by
+eye are exactly "quiet, head down, reading/writing" (on-task) versus "quiet,
+head down, spaced out" (off-task) -- a trained human observer resolves it by
+watching for sustained duration and context a bounding box cannot see
+either. Leaving this bucket ambiguous mirrors the established literature's
+own unresolved difficulty; forcing a confident split here would be less
+honest than the established instrument itself is willing to be. Off-task
+Verbal (BOSS) has no equivalent here at all -- it is defined by audible
+sound, which this vision-only pipeline does not have access to; this is a
+genuine, permanent gap, not an oversight.
+
 What this module does NOT claim:
 
 * It does not detect peer interaction. Kendon's F-formation research gives a
