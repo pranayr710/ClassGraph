@@ -25,8 +25,8 @@ import pytest
 
 cv2 = pytest.importorskip("cv2")
 
-from backend.config import CONFIG  # noqa: E402 - after importorskip
-from backend.headpose import (  # noqa: E402 - after importorskip
+from backend.config import CONFIG
+from backend.headpose import (
     ALLOWED_GAZE_LABELS,
     HeadPoseEstimator,
     HeadPoseResult,
@@ -87,7 +87,20 @@ def test_loads_pretrained_weights() -> None:
 
 
 def test_frontal_face_returns_teacher() -> None:
-    """A frontal face gives |yaw| < 15 and gaze_label == 'teacher'."""
+    """A frontal face gives |yaw| < 15 and gaze_label == 'teacher'.
+
+    SixDRepNet expects a face crop, not a whole scene — on a wide image it
+    returns garbage (measured: the source webcam frame this fixture was cut
+    from gives yaw=19.2, "down" fed whole, vs. yaw=-2.9, "teacher" through the
+    real pipeline). This test used to hand the entire fixture image to
+    ``estimate()`` on the assumption that "SixDRepNet finds the dominant
+    face", which is false and made the test fragile to exactly how tightly
+    the fixture happens to be cropped (see the fixture's own commit history:
+    only one of several plausible crop margins passed). Getting a real face
+    box from FaceAnalyzer first removes that fragility; falling back to the
+    whole image keeps this test running on a machine that has sixdrepnet but
+    not mediapipe.
+    """
     pytest.importorskip("sixdrepnet")
     fixture = _find_frontal_fixture()
     if fixture is None:
@@ -99,9 +112,19 @@ def test_frontal_face_returns_teacher() -> None:
     assert frame is not None
     h, w = frame.shape[:2]
 
+    face_box: tuple[int, int, int, int] = (0, 0, w, h)
+    try:
+        from backend.face import FaceAnalyzer
+
+        with FaceAnalyzer() as fa:
+            detected = fa.analyze(frame, [(0, 0, w, h)])[0]
+        if detected.face_bbox is not None:
+            face_box = detected.face_bbox
+    except ImportError:
+        pass  # mediapipe unavailable here; fall back to the whole image.
+
     estimator = HeadPoseEstimator()
-    # Whole-image box: SixDRepNet estimates pose for the dominant face.
-    results = estimator.estimate(frame, [(0, 0, w, h)])
+    results = estimator.estimate(frame, [face_box])
     assert len(results) == 1
     result = results[0]
     assert result is not None, "Expected a pose for the fixture face."
