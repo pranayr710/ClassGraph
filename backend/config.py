@@ -184,6 +184,77 @@ class PostureConfig:
 
 
 @dataclass(frozen=True)
+class AttentionConfig:
+    """Exploratory — Stage 3 first slice: windowed, per-student attention signal.
+
+    Consumes Stage 1+2 JSONL output (gaze_label, EAR, posture presence,
+    objects, track_id) after the fact; nothing here is wired into
+    schema.json or the live capture loop. See backend/attention.py's module
+    docstring for the research this operationalises and what it deliberately
+    does not claim.
+
+    Every timing default below is an engineering interpolation across several
+    adjacent findings in cognitive-science and gaze-based mind-wandering
+    research, not a number lifted from a single study that measured this
+    exact system. Treat these as tunable starting points to validate against
+    real footage, not settled constants.
+    """
+
+    # Rolling window for the per-frame category distribution. Gaze-based
+    # mind-wandering detectors built for real lecture footage get their best
+    # results aggregating over roughly 12 seconds, not single frames (Faber,
+    # Bixler & D'Mello). 15s rounds that up with margin for this pipeline's
+    # lower frame rate under posture fallback (~8 FPS on an RTX 4050).
+    window_seconds: float = 15.0
+
+    # How long a rolling window must stay majority "head_down_with_device"
+    # before it is flagged as sustained rather than a normal brief lapse.
+    # A single ~2-second break was shown to prevent vigilance decline
+    # entirely (Ariga & Lleras 2011); most self-reported classroom lapses
+    # last under a minute (Bunce, Flens & Neiles 2010). 90s sits at the
+    # midpoint of the literature's 60-120s "this is no longer a blip" range
+    # — deliberately not the lower bound, so a single missed glance-back
+    # doesn't trip it.
+    sustained_seconds: float = 90.0
+
+    # Fraction of the rolling window that must be "head_down_with_device"
+    # for the window to count as currently off-task, when accumulating
+    # toward sustained_seconds.
+    off_task_majority_fraction: float = 0.5
+
+    # Per-student calibration baseline period. A real classroom deployment
+    # (Sumer et al. 2021) measured a personal calibration baseline built
+    # from the student's own first ~60s of data improving AUC by +0.084 --
+    # the one concrete, literature-measured accuracy lever available here.
+    calibration_seconds: float = 60.0
+
+    # gaze_label "left"/"right" is deliberately NOT treated as off-task.
+    # Kendon's F-formation research gives a real geometric definition of
+    # joint peer interaction (reciprocal, sustained body orientation between
+    # two tracked people), but detecting it needs pairing across tracked
+    # students, which this first slice does not implement -- see the module
+    # docstring. Collapsing "turned toward a neighbour" into "distracted"
+    # would be exactly the mistake that research warned against, so it is
+    # reported as its own "oriented_away" bucket instead: known-ambiguous,
+    # not guessed at.
+    #
+    # gaze_label "down"/"back" is similarly not assumed to be off-task on its
+    # own -- gaze aversion while concentrating on a hard problem is a
+    # documented, opposite-reading confound (Doherty-Sneddon et al.). It is
+    # only treated as a meaningful signal when combined with a nearby
+    # "cell phone" detection, which is the one case with a defensible
+    # behavioural reading in the existing schema (a phone under a bowed
+    # head is a stronger proxy than a bowed head alone, which is equally
+    # consistent with reading or writing).
+    device_gaze_labels: tuple[str, ...] = ("down", "back")
+    device_object_classes: tuple[str, ...] = ("cell phone",)
+
+    # A "cell phone" detection counts as near a person if its box overlaps
+    # theirs at all, in image space.
+    device_proximity_iou: float = 0.0
+
+
+@dataclass(frozen=True)
 class TrackingConfig:
     """Stage 2 — ByteTrack settings, filling the ``track_id`` field Stage 1 always leaves ``null``.
 
@@ -242,6 +313,7 @@ class Config:
     face: FaceConfig = field(default_factory=FaceConfig)
     headpose: HeadPoseConfig = field(default_factory=HeadPoseConfig)
     posture: PostureConfig = field(default_factory=PostureConfig)
+    attention: AttentionConfig = field(default_factory=AttentionConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
 
