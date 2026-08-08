@@ -164,11 +164,25 @@ Also lowered the person-confidence threshold (0.40 → 0.30) — distant student
 
 ---
 
+## 10. Closing four flagged gaps — session identity, peer interaction, taxonomy, fairness
+
+After the attention tracker shipped, four follow-up items were flagged as unfinished. All four are now closed.
+
+**Session-reset identity — verified, not assumed.** Grepped every module for face embeddings or re-identification logic: none exist anywhere in the codebase. Found the default usage path is already safe (a fresh tracker is built per video automatically). Added two regression tests to make this a *tested* contract instead of a comment someone could miss — including one that caught a wrong assumption of my own: I expected a "leaked" session to show up as continued ID numbering, but it actually manifests as the new session's person coming back completely unconfirmed. The test failed, told me why, and got fixed before being trusted.
+
+**Peer-interaction detection — built, and it caught a real problem on the first real check.** Added the geometry needed to detect two students jointly oriented toward each other (extending the posture module with shoulder-orientation data), then built the detector itself. Validated it against a real classroom photo — and the top-scoring "interacting" pair turned out, on inspection, to be two students at completely different, non-adjacent desks with no visible sign of interacting at all. That false positive is now documented prominently in the code rather than buried, along with a specific measurement showing the distance threshold is looser than this classroom's real desk spacing.
+
+**Label taxonomy — researched a real match, left the decision to the team.** Found BOSS (Behavioral Observation of Students in Schools), a validated school-psychology instrument that closely matches the categories already built — and independently confirmed the 15-second measurement window chosen earlier sits inside the range that instrument's own methodology research supports, for completely unrelated reasons. The mapping is documented as a recommendation; no category names were changed, since that's a call for the team to make.
+
+**Skin-tone fairness audit — researched first, built what the evidence supports.** Before building an audit with no data to run it on, checked whether the two AI models in use already have documented bias findings. Found real answers: MediaPipe (the face-detection model) has an official Google fairness report that already tested a "Southern Asia" population bucket — the closest match to this project's real data — and passed, though not with the best score of any region tested. SixDRepNet (the head-pose model), by contrast, has **zero** published fairness testing anywhere. Built two things: (1) a ready-to-run stratified audit that only needs labeled data to produce real numbers, and (2) a data-free diagnostic that checks whether image quality (resolution, brightness) affects detection accuracy — and actually ran it on all 13 real classroom photos. Result: detection accuracy dropped to 7% on the lowest-resolution image, which is the same number found by hand much earlier in this project, now explained by a measurable cause instead of attributed to camera angle alone.
+
+---
+
 ## Where things stand, in numbers
 
 | Metric | Session start | Now |
 |---|---|---|
-| Automated tests passing | 10 (9 skipped) | **62 (0 skipped, 0 failed)** |
+| Automated tests passing | 10 (9 skipped) | **109 (0 skipped, 0 failed)** |
 | CUDA confirmed working | No | **Yes — RTX 4050** |
 | Faces found on real footage | 0 | Robust (42% face, up to 100% w/ posture fallback) |
 | Persons found (12-image sample) | 139 | 236 |
@@ -176,4 +190,5 @@ Also lowered the person-confidence threshold (0.40 → 0.30) — distant student
 | Real end-to-end run completed | Never | Yes — 321 frames, schema-valid |
 | Stage 2 (tracking) | Not started | Done (ByteTrack) |
 | Stage 3 (engagement scoring) design | No research basis | Grounded in ~130 sourced findings |
-| Stage 3 (engagement scoring) code | None | First slice built: windowed attention + calibration |
+| Stage 3 (engagement scoring) code | None | Attention tracker + peer-interaction detector, both real modules |
+| Fairness/bias evidence | None gathered | Two models researched to their source; one real diagnostic run on real data |
