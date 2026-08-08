@@ -21,3 +21,6 @@ outputs/
 *.pt
 *.pth
 weights/
+
+# Generated PPT layout previews (regenerate with verify_ppt.py)
+ppt_preview/
