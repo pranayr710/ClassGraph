@@ -38,9 +38,10 @@ import argparse
 import json
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, Sequence
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
@@ -64,7 +65,7 @@ logger = logging.getLogger(__name__)
 class DetectorLike(Protocol):
     """Anything exposing ``detect(frame) -> (persons, objects)``."""
 
-    def detect(self, frame: np.ndarray) -> tuple[list["Person"], list["Obj"]]: ...
+    def detect(self, frame: np.ndarray) -> tuple[list[Person], list[Obj]]: ...
 
 
 class FaceAnalyzerLike(Protocol):
@@ -72,7 +73,7 @@ class FaceAnalyzerLike(Protocol):
 
     def analyze(
         self, frame: np.ndarray, person_bboxes: Sequence[Sequence[float]]
-    ) -> list["FaceResult"]: ...
+    ) -> list[FaceResult]: ...
 
 
 class HeadPoseLike(Protocol):
@@ -80,7 +81,7 @@ class HeadPoseLike(Protocol):
 
     def estimate(
         self, frame: np.ndarray, face_bboxes: Sequence[Sequence[float] | None]
-    ) -> list["HeadPoseResult | None"]: ...
+    ) -> list[HeadPoseResult | None]: ...
 
 
 class PostureAnalyzerLike(Protocol):
@@ -88,16 +89,16 @@ class PostureAnalyzerLike(Protocol):
 
     def analyze(
         self, frame: np.ndarray, person_bboxes: Sequence[Sequence[float]]
-    ) -> list["PostureResult"]: ...
+    ) -> list[PostureResult]: ...
 
 
 class PersonTrackerLike(Protocol):
     """Anything exposing ``update(persons) -> list[track_id|None]``."""
 
-    def update(self, persons: Sequence["Person"]) -> list[int | None]: ...
+    def update(self, persons: Sequence[Person]) -> list[int | None]: ...
 
 
-def _face_to_json(face: "FaceResult | None") -> dict | None:
+def _face_to_json(face: FaceResult | None) -> dict | None:
     """Serialise a FaceResult into the frozen ``face`` object, or ``None``.
 
     A face is considered present only when it has a bounding box. Landmarks and
@@ -124,7 +125,7 @@ def _face_to_json(face: "FaceResult | None") -> dict | None:
     }
 
 
-def _headpose_to_json(hp: "HeadPoseResult | None") -> dict | None:
+def _headpose_to_json(hp: HeadPoseResult | None) -> dict | None:
     """Serialise a HeadPoseResult into the frozen ``head_pose`` object, or None.
 
     Args:
@@ -155,7 +156,7 @@ def _point_to_json(point: tuple[float, float] | None) -> list[float] | None:
     return None if point is None else [float(point[0]), float(point[1])]
 
 
-def _posture_to_json(posture: "PostureResult | None") -> dict | None:
+def _posture_to_json(posture: PostureResult | None) -> dict | None:
     """Serialise a PostureResult into the ``posture`` object, or ``None``.
 
     Args:
@@ -181,12 +182,12 @@ def _posture_to_json(posture: "PostureResult | None") -> dict | None:
 def _assemble_frame(
     frame_id: int,
     timestamp_ms: int,
-    persons: list["Person"],
-    faces: list["FaceResult"],
-    headposes: list["HeadPoseResult | None"],
-    postures: list["PostureResult"],
+    persons: list[Person],
+    faces: list[FaceResult],
+    headposes: list[HeadPoseResult | None],
+    postures: list[PostureResult],
     track_ids: list[int | None],
-    objects: list["Obj"],
+    objects: list[Obj],
 ) -> dict:
     """Build one JSONL record in the Stage 1 schema.
 
@@ -254,35 +255,35 @@ def _assemble_frame(
     }
 
 
-def _build_detector(config: Config) -> "Detector":
+def _build_detector(config: Config) -> Detector:
     """Construct the real :class:`~backend.detection.Detector` from config."""
     from backend.detection import Detector
 
     return Detector(config.detection)
 
 
-def _build_face_analyzer(config: Config) -> "FaceAnalyzer":
+def _build_face_analyzer(config: Config) -> FaceAnalyzer:
     """Construct the real :class:`~backend.face.FaceAnalyzer` from config."""
     from backend.face import FaceAnalyzer
 
     return FaceAnalyzer(config.face)
 
 
-def _build_headpose_estimator(config: Config) -> "HeadPoseEstimator":
+def _build_headpose_estimator(config: Config) -> HeadPoseEstimator:
     """Construct the real :class:`~backend.headpose.HeadPoseEstimator` from config."""
     from backend.headpose import HeadPoseEstimator
 
     return HeadPoseEstimator(config.headpose)
 
 
-def _build_posture_analyzer(config: Config) -> "PostureAnalyzer":
+def _build_posture_analyzer(config: Config) -> PostureAnalyzer:
     """Construct the real :class:`~backend.posture.PostureAnalyzer` from config."""
     from backend.posture import PostureAnalyzer
 
     return PostureAnalyzer(config.posture)
 
 
-def _build_person_tracker(config: Config) -> "PersonTracker":
+def _build_person_tracker(config: Config) -> PersonTracker:
     """Construct the real :class:`~backend.tracking.PersonTracker` from config."""
     from backend.tracking import PersonTracker
 
@@ -387,9 +388,9 @@ def process_video(
 
                 pos_ms = capture.get(cv2.CAP_PROP_POS_MSEC)
                 if pos_ms and pos_ms > 0:
-                    timestamp_ms = int(round(pos_ms))
+                    timestamp_ms = round(pos_ms)
                 elif fps > 0:
-                    timestamp_ms = int(round(frame_index * 1000.0 / fps))
+                    timestamp_ms = round(frame_index * 1000.0 / fps)
                 else:
                     timestamp_ms = 0
 

@@ -136,10 +136,10 @@ def _xyxy_to_xywh(
     Returns:
         The box as ``(x, y, w, h)`` with top-left origin and integer pixels.
     """
-    x = int(round(x1))
-    y = int(round(y1))
-    w = int(round(x2 - x1))
-    h = int(round(y2 - y1))
+    x = round(x1)
+    y = round(y1)
+    w = round(x2 - x1)
+    h = round(y2 - y1)
     return (max(x, 0), max(y, 0), max(w, 1), max(h, 1))
 
 
@@ -183,17 +183,19 @@ class Detector:
         # local checkpoint; a bare name like "yolo11m.pt" is a model alias that
         # Ultralytics resolves/downloads itself. Only guard the local-path case.
         weights_path = Path(weights)
-        if weights_path.suffix == ".pt" and weights_path.parent != Path("."):
-            if not weights_path.is_file():
-                raise FileNotFoundError(
-                    f"YOLO weights not found at local path: {weights_path}"
-                )
+        is_local_checkpoint = (
+            weights_path.suffix == ".pt" and weights_path.parent != Path(".")
+        )
+        if is_local_checkpoint and not weights_path.is_file():
+            raise FileNotFoundError(
+                f"YOLO weights not found at local path: {weights_path}"
+            )
 
         try:
             self._model = YOLO(weights)
         except FileNotFoundError:
             raise
-        except Exception as exc:  # noqa: BLE001 - re-raise as RuntimeError below
+        except Exception as exc:
             raise RuntimeError(
                 f"Failed to load YOLO model from {weights!r}: {exc}"
             ) from exc
@@ -267,12 +269,10 @@ class Detector:
             confidence = float(conf)
             bbox = _xyxy_to_xywh(float(x1), float(y1), float(x2), float(y2))
 
-            if name == _PERSON_CLASS_NAME:
-                if confidence >= self.config.person_conf:
-                    persons.append(Person(bbox=bbox, confidence=confidence))
-            elif name in self._whitelist:
-                if confidence >= self.config.object_conf:
-                    objects.append(Obj(cls=name, bbox=bbox, confidence=confidence))
+            if name == _PERSON_CLASS_NAME and confidence >= self.config.person_conf:
+                persons.append(Person(bbox=bbox, confidence=confidence))
+            elif name in self._whitelist and confidence >= self.config.object_conf:
+                objects.append(Obj(cls=name, bbox=bbox, confidence=confidence))
 
         return persons, objects
 
@@ -387,9 +387,9 @@ def run_on_video(
                 # Prefer the container's PTS; fall back to frame_index / fps.
                 pos_ms = capture.get(cv2.CAP_PROP_POS_MSEC)
                 if pos_ms and pos_ms > 0:
-                    timestamp_ms = int(round(pos_ms))
+                    timestamp_ms = round(pos_ms)
                 elif fps > 0:
-                    timestamp_ms = int(round(frame_index * 1000.0 / fps))
+                    timestamp_ms = round(frame_index * 1000.0 / fps)
                 else:
                     timestamp_ms = 0
 

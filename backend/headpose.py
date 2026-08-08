@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
 
@@ -183,7 +184,7 @@ def _coerce_bbox(bbox: Sequence[float]) -> Bbox:
     if len(bbox) != 4:
         raise ValueError(f"bbox must have 4 elements (x, y, w, h), got {len(bbox)}.")
     try:
-        x, y, w, h = (int(round(float(v))) for v in bbox)
+        x, y, w, h = (round(float(v)) for v in bbox)
     except (TypeError, ValueError) as exc:
         raise TypeError(f"bbox elements must be numbers: {bbox!r}") from exc
     if w <= 0 or h <= 0:
@@ -271,7 +272,7 @@ class HeadPoseEstimator:
 
         try:
             self._model = SixDRepNet(gpu_id=gpu_id, dict_path=dict_path)
-        except Exception as exc:  # noqa: BLE001 - re-raise as RuntimeError
+        except Exception as exc:
             raise RuntimeError(f"Failed to load SixDRepNet: {exc}") from exc
 
         logger.info(
@@ -297,8 +298,8 @@ class HeadPoseEstimator:
         """
         img_h, img_w = frame.shape[:2]
         x, y, w, h = bbox
-        pad_w = int(round(w * self.config.crop_padding))
-        pad_h = int(round(h * self.config.crop_padding))
+        pad_w = round(w * self.config.crop_padding)
+        pad_h = round(h * self.config.crop_padding)
         x0 = max(0, x - pad_w)
         y0 = max(0, y - pad_h)
         x1 = min(img_w, x + w + pad_w)
@@ -361,10 +362,8 @@ class HeadPoseEstimator:
 
             try:
                 pitch, yaw, roll = self._model.predict(crop)
-            except Exception as exc:  # noqa: BLE001 - logged, not swallowed
-                logger.error(
-                    "SixDRepNet.predict failed for bbox %s: %s", box, exc, exc_info=True
-                )
+            except Exception:
+                logger.exception("SixDRepNet.predict failed for bbox %s", box)
                 results.append(None)
                 continue
 

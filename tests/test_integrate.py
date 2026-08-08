@@ -34,12 +34,12 @@ pytest.importorskip("tqdm")
 # PersonTracker (Stage 2) is not faked below, so its real dependency is needed.
 pytest.importorskip("ultralytics")
 
-from backend.config import CONFIG  # noqa: E402 - after importorskip
-from backend.detection import Obj, Person  # noqa: E402
-from backend.face import FaceResult  # noqa: E402
-from backend.headpose import HeadPoseResult  # noqa: E402
-from backend.integrate import process_video  # noqa: E402
-from backend.posture import PostureResult  # noqa: E402
+from backend.config import CONFIG
+from backend.detection import Obj, Person
+from backend.face import FaceResult
+from backend.headpose import HeadPoseResult
+from backend.integrate import process_video
+from backend.posture import PostureResult
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCHEMA_PATH = _REPO_ROOT / "schema.json"

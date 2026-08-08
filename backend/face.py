@@ -63,8 +63,8 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 
@@ -191,10 +191,10 @@ def _bbox_from_points(points: Sequence[Point], img_w: int, img_h: int) -> Bbox:
         raise ValueError("Cannot compute a bbox from an empty point set.")
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
-    x0 = max(0, int(math.floor(min(xs))))
-    y0 = max(0, int(math.floor(min(ys))))
-    x1 = min(img_w, int(math.ceil(max(xs))))
-    y1 = min(img_h, int(math.ceil(max(ys))))
+    x0 = max(0, math.floor(min(xs)))
+    y0 = max(0, math.floor(min(ys)))
+    x1 = min(img_w, math.ceil(max(xs)))
+    y1 = min(img_h, math.ceil(max(ys)))
     return (x0, y0, max(1, x1 - x0), max(1, y1 - y0))
 
 
@@ -260,7 +260,7 @@ def _coerce_bbox(bbox: Sequence[float]) -> Bbox:
     if len(bbox) != 4:
         raise ValueError(f"bbox must have 4 elements (x, y, w, h), got {len(bbox)}.")
     try:
-        x, y, w, h = (int(round(float(v))) for v in bbox)
+        x, y, w, h = (round(float(v)) for v in bbox)
     except (TypeError, ValueError) as exc:
         raise TypeError(f"bbox elements must be numbers: {bbox!r}") from exc
     if w <= 0 or h <= 0:
@@ -318,7 +318,7 @@ class FaceAnalyzer:
                 min_detection_confidence=self.config.min_detection_confidence,
                 min_tracking_confidence=self.config.min_tracking_confidence,
             )
-        except Exception as exc:  # noqa: BLE001 - re-raise as RuntimeError
+        except Exception as exc:
             raise RuntimeError(
                 f"Failed to initialise MediaPipe Face Mesh: {exc}"
             ) from exc
@@ -331,7 +331,7 @@ class FaceAnalyzer:
             self.config.num_landmarks,
         )
 
-    def __enter__(self) -> "FaceAnalyzer":
+    def __enter__(self) -> FaceAnalyzer:
         """Enter the runtime context and return the analyzer."""
         return self
 
@@ -362,8 +362,8 @@ class FaceAnalyzer:
             image.
         """
         x, y, w, h = person_box
-        pad_w = int(round(w * self.config.person_crop_padding))
-        pad_h = int(round(h * self.config.person_crop_padding))
+        pad_w = round(w * self.config.person_crop_padding)
+        pad_h = round(h * self.config.person_crop_padding)
         x0 = max(0, x - pad_w)
         y0 = max(0, y - pad_h)
         x1 = min(img_w, x + w + pad_w)

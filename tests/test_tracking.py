@@ -29,9 +29,9 @@ import pytest
 
 pytest.importorskip("ultralytics")
 
-from backend.config import CONFIG, TrackingConfig  # noqa: E402
-from backend.detection import Person  # noqa: E402
-from backend.tracking import PersonTracker  # noqa: E402
+from backend.config import CONFIG, TrackingConfig
+from backend.detection import Person
+from backend.tracking import PersonTracker
 
 _BOX = (100, 100, 50, 100)  # (x, y, w, h)
 

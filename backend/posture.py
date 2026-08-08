@@ -58,8 +58,8 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 
@@ -124,7 +124,7 @@ def _coerce_bbox(bbox: Sequence[float]) -> Bbox:
     if len(bbox) != 4:
         raise ValueError(f"bbox must have 4 elements (x, y, w, h), got {len(bbox)}.")
     try:
-        x, y, w, h = (int(round(float(v))) for v in bbox)
+        x, y, w, h = (round(float(v)) for v in bbox)
     except (TypeError, ValueError) as exc:
         raise TypeError(f"bbox elements must be numbers: {bbox!r}") from exc
     if w <= 0 or h <= 0:
@@ -179,7 +179,7 @@ class PostureAnalyzer:
                 model_complexity=self.config.model_complexity,
                 min_detection_confidence=self.config.min_detection_confidence,
             )
-        except Exception as exc:  # noqa: BLE001 - re-raise as RuntimeError
+        except Exception as exc:
             raise RuntimeError(f"Failed to initialise MediaPipe Pose: {exc}") from exc
 
         self._closed: bool = False
@@ -189,7 +189,7 @@ class PostureAnalyzer:
             self.config.min_detection_confidence,
         )
 
-    def __enter__(self) -> "PostureAnalyzer":
+    def __enter__(self) -> PostureAnalyzer:
         """Enter the runtime context and return the analyzer."""
         return self
 

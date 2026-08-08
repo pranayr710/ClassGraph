@@ -25,8 +25,8 @@ cv2 = pytest.importorskip("cv2")
 
 # Importing backend.face does NOT import mediapipe (that happens lazily inside
 # FaceAnalyzer), so the pure EAR-math tests below run without it.
-from backend.config import CONFIG  # noqa: E402 - after importorskip
-from backend.face import (  # noqa: E402 - after importorskip
+from backend.config import CONFIG
+from backend.face import (
     FaceAnalyzer,
     FaceResult,
     compute_ear,
@@ -40,7 +40,7 @@ def _face_mesh_available() -> bool:
     try:
         import mediapipe as mp
 
-        _ = mp.solutions.face_mesh  # noqa: B018 - attribute access is the probe
+        _ = mp.solutions.face_mesh
         return True
     except Exception:  # noqa: BLE001 - any failure => treat as unavailable
         return False
@@ -148,7 +148,7 @@ def test_single_face_returns_468_landmarks(analyzer: FaceAnalyzer) -> None:
         assert 0.0 <= x <= w
         assert 0.0 <= y <= h
     assert result.face_bbox is not None
-    fx, fy, fw, fh = result.face_bbox
+    _fx, _fy, fw, fh = result.face_bbox
     assert fw > 0 and fh > 0
 
 

@@ -27,7 +27,7 @@ pytest.importorskip("torch")
 cv2 = pytest.importorskip("cv2")
 jsonschema = pytest.importorskip("jsonschema")
 
-from backend.detection import (  # noqa: E402 - imported after importorskip guards
+from backend.detection import (
     Detector,
     Obj,
     Person,
@@ -109,7 +109,7 @@ def test_detects_person_on_fixture(detector: Detector) -> None:
     assert len(persons) >= 1, f"Expected >=1 person in {fixture.name}, found 0."
     for person in persons:
         assert isinstance(person, Person)
-        x, y, w, h = person.bbox
+        _x, _y, w, h = person.bbox
         assert w > 0 and h > 0
         assert 0.0 <= person.confidence <= 1.0
         assert person.confidence >= detector.config.person_conf

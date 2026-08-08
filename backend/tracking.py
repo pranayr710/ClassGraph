@@ -40,8 +40,9 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -77,7 +78,7 @@ class _TrackerInput:
     def __len__(self) -> int:
         return len(self.conf)
 
-    def __getitem__(self, mask: np.ndarray) -> "_TrackerInput":
+    def __getitem__(self, mask: np.ndarray) -> _TrackerInput:
         return _TrackerInput(self.xywh[mask], self.conf[mask], self.cls[mask])
 
     @property
@@ -87,7 +88,7 @@ class _TrackerInput:
         return np.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], axis=1)
 
     @staticmethod
-    def empty() -> "_TrackerInput":
+    def empty() -> _TrackerInput:
         """An input with zero detections, for frames with nobody in them."""
         z4 = np.zeros((0, 4), dtype=np.float32)
         z1 = np.zeros((0,), dtype=np.float32)
@@ -152,7 +153,7 @@ class PersonTracker:
         """
         self._tracker = self._new_tracker()
 
-    def update(self, persons: Sequence["Person"]) -> list[int | None]:
+    def update(self, persons: Sequence[Person]) -> list[int | None]:
         """Assign a ``track_id`` to each person, aligned index-wise with ``persons``.
 
         Must be called once per **consecutive** processed frame of the same

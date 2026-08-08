@@ -24,8 +24,8 @@ cv2 = pytest.importorskip("cv2")
 
 # Importing backend.posture does NOT import mediapipe (lazy, inside
 # PostureAnalyzer), so any pure-logic tests here would run without it.
-from backend.config import CONFIG  # noqa: E402 - after importorskip
-from backend.posture import PostureAnalyzer, PostureResult  # noqa: E402
+from backend.config import CONFIG
+from backend.posture import PostureAnalyzer, PostureResult
 
 _FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -35,7 +35,7 @@ def _pose_available() -> bool:
     try:
         import mediapipe as mp
 
-        _ = mp.solutions.pose  # noqa: B018 - attribute access is the probe
+        _ = mp.solutions.pose
         return True
     except Exception:  # noqa: BLE001 - any failure => treat as unavailable
         return False
