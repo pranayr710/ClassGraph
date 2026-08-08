@@ -1,12 +1,12 @@
 """Integration tests for :mod:`backend.integrate`.
 
 The full pipeline is driven with lightweight fakes injected into
-``process_video`` for the three heavy modules (the real
-Detector/FaceAnalyzer/HeadPoseEstimator need ML packages + weights). The fakes
-return the *real* result dataclasses (``Person``/``Obj``/``FaceResult``/
-``HeadPoseResult``), so the wiring, index-alignment, contract assembly, JSONL
-writing and sample-rate behaviour are all exercised for real and validated
-against the frozen ``schema.json``.
+``process_video`` for the four heavy modules (the real
+Detector/FaceAnalyzer/HeadPoseEstimator/PostureAnalyzer need ML packages +
+weights). The fakes return the *real* result dataclasses
+(``Person``/``Obj``/``FaceResult``/``HeadPoseResult``/``PostureResult``), so
+the wiring, index-alignment, contract assembly, JSONL writing and sample-rate
+behaviour are all exercised for real and validated against ``schema.json``.
 
 Person tracking (Stage 2) is deliberately NOT faked here: ``PersonTracker``
 needs only ``ultralytics`` + ``lap`` (no weights, no GPU), the same real
@@ -39,6 +39,7 @@ from backend.detection import Obj, Person  # noqa: E402
 from backend.face import FaceResult  # noqa: E402
 from backend.headpose import HeadPoseResult  # noqa: E402
 from backend.integrate import process_video  # noqa: E402
+from backend.posture import PostureResult  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCHEMA_PATH = _REPO_ROOT / "schema.json"
@@ -89,6 +90,24 @@ class _FakeHeadPose:
         return out
 
 
+class _FakePostureAnalyzer:
+    """Returns a fixed PostureResult (keypoints found) for each person bbox."""
+
+    def analyze(self, frame: np.ndarray, person_bboxes) -> list[PostureResult]:
+        results: list[PostureResult] = []
+        for x, y, w, h in person_bboxes:
+            results.append(
+                PostureResult(
+                    keypoints_detected=True,
+                    nose=(float(x + w / 2), float(y + h * 0.1)),
+                    shoulder_mid=(float(x + w / 2), float(y + h * 0.3)),
+                    hip_mid=(float(x + w / 2), float(y + h * 0.7)),
+                    vertical_lean=-0.2,
+                )
+            )
+        return results
+
+
 def _make_fixture_video(path: Path, n_frames: int) -> int:
     """Write a small synthetic video and return the number of frames written."""
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -116,6 +135,7 @@ def _fakes() -> dict:
         "detector": _FakeDetector(),
         "face_analyzer": _FakeFaceAnalyzer(),
         "headpose_estimator": _FakeHeadPose(),
+        "posture_analyzer": _FakePostureAnalyzer(),
     }
 
 
@@ -158,6 +178,8 @@ def test_end_to_end_valid_jsonl(schema: dict, tmp_path: Path) -> None:
         assert person["track_id"] == 1
         assert len(person["face"]["landmarks"]) == 468
         assert person["head_pose"]["gaze_label"] == "teacher"
+        assert person["posture"]["nose"] is not None
+        assert person["posture"]["vertical_lean"] == pytest.approx(-0.2)
         assert record["objects"][0]["cls"] == "laptop"
 
 

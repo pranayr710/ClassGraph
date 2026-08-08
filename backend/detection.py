@@ -285,8 +285,8 @@ def _frame_record(
 ) -> dict:
     """Build one JSONL record in the frozen Stage 1 schema.
 
-    Face and head-pose fields are ``None`` here; Person B/C fill them in during
-    integration.
+    Face, head-pose and posture fields are ``None`` here; Person B/C and
+    ``integrate.py`` fill them in during integration.
 
     Args:
         frame_id: Zero-indexed frame number.
@@ -307,6 +307,7 @@ def _frame_record(
                 "confidence": p.confidence,
                 "face": None,  # Person B fills this in
                 "head_pose": None,  # Person C fills this in
+                "posture": None,  # integrate.py fills this in
             }
             for p in persons
         ],

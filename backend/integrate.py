@@ -1,11 +1,13 @@
-"""Stage 1+2 integration — wire detection + face + head-pose + tracking into JSONL.
+"""Stage 1+2 integration — wire detection + face + head-pose + posture +
+tracking into JSONL.
 
-Runs the perception modules over a video and emits the frozen Stage 1 contract,
-one JSON object per processed frame:
+Runs the perception modules over a video and emits the Stage 1 contract, one
+JSON object per processed frame:
 
     Detector       -> persons (bbox, confidence) + objects
     FaceAnalyzer   -> per-person face landmarks + EAR (index-aligned)
     HeadPoseEstimator -> per-face yaw/pitch/roll + gaze label (index-aligned)
+    PostureAnalyzer   -> per-person raw pose geometry (index-aligned)
     PersonTracker  -> per-person track_id (Stage 2, index-aligned)
 
 A person's ``track_id`` is ``null`` whenever ByteTrack has not (yet) confirmed
@@ -13,6 +15,13 @@ them as a track this frame — expected on a first sighting, not a dropped
 detection; see :mod:`backend.tracking`. Output validates against
 ``schema.json``, which already types ``track_id`` as ``int | null`` for
 exactly this reason.
+
+``posture`` is run for every person regardless of whether a face was found —
+that is the point of it: on real classroom footage a large fraction of persons
+have no detectable face at all (bowed over a desk, turned away), and
+:mod:`backend.posture` recovers a different, face-independent signal for that
+population. It is raw geometry, not a posture classification — see that
+module's docstring.
 
 Usage (CLI):
     python -m backend.integrate --video in.mp4 --out out.jsonl --sample-rate 5
@@ -41,6 +50,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from backend.detection import Detector, Obj, Person
     from backend.face import FaceAnalyzer, FaceResult
     from backend.headpose import HeadPoseEstimator, HeadPoseResult
+    from backend.posture import PostureAnalyzer, PostureResult
     from backend.tracking import PersonTracker
 
 logger = logging.getLogger(__name__)
@@ -71,6 +81,14 @@ class HeadPoseLike(Protocol):
     def estimate(
         self, frame: np.ndarray, face_bboxes: Sequence[Sequence[float] | None]
     ) -> list["HeadPoseResult | None"]: ...
+
+
+class PostureAnalyzerLike(Protocol):
+    """Anything exposing ``analyze(frame, person_bboxes) -> list[PostureResult]``."""
+
+    def analyze(
+        self, frame: np.ndarray, person_bboxes: Sequence[Sequence[float]]
+    ) -> list["PostureResult"]: ...
 
 
 class PersonTrackerLike(Protocol):
@@ -125,16 +143,52 @@ def _headpose_to_json(hp: "HeadPoseResult | None") -> dict | None:
     }
 
 
+def _point_to_json(point: tuple[float, float] | None) -> list[float] | None:
+    """Serialise an (x, y) point, or ``None``.
+
+    Args:
+        point: A 2-tuple of coordinates, or ``None``.
+
+    Returns:
+        A two-element list, or ``None``.
+    """
+    return None if point is None else [float(point[0]), float(point[1])]
+
+
+def _posture_to_json(posture: "PostureResult | None") -> dict | None:
+    """Serialise a PostureResult into the ``posture`` object, or ``None``.
+
+    Args:
+        posture: The per-person posture result, or ``None``.
+
+    Returns:
+        A dict matching the schema's ``posture`` object, or ``None`` when
+        MediaPipe Pose found no body in this person's crop. This is raw
+        geometry, not a posture classification — see backend/posture.py.
+    """
+    if posture is None or not posture.keypoints_detected:
+        return None
+    return {
+        "nose": _point_to_json(posture.nose),
+        "shoulder_mid": _point_to_json(posture.shoulder_mid),
+        "hip_mid": _point_to_json(posture.hip_mid),
+        "vertical_lean": (
+            None if posture.vertical_lean is None else float(posture.vertical_lean)
+        ),
+    }
+
+
 def _assemble_frame(
     frame_id: int,
     timestamp_ms: int,
     persons: list["Person"],
     faces: list["FaceResult"],
     headposes: list["HeadPoseResult | None"],
+    postures: list["PostureResult"],
     track_ids: list[int | None],
     objects: list["Obj"],
 ) -> dict:
-    """Build one JSONL record in the frozen Stage 1 schema.
+    """Build one JSONL record in the Stage 1 schema.
 
     Args:
         frame_id: Zero-indexed source frame number.
@@ -142,6 +196,9 @@ def _assemble_frame(
         persons: Detected persons for this frame.
         faces: Face results, index-aligned with ``persons``.
         headposes: Head-pose results, index-aligned with ``persons``.
+        postures: Raw pose-geometry results, index-aligned with ``persons``.
+            Computed independently of ``faces``/``headposes`` — see
+            :mod:`backend.posture`.
         track_ids: Stage 2 track ids, index-aligned with ``persons``. An entry
             is ``None`` when ByteTrack has not (yet) confirmed that person as a
             track this frame (see :mod:`backend.tracking`) — expected, not an
@@ -152,18 +209,23 @@ def _assemble_frame(
         A JSON-serialisable dict matching ``schema.json``.
 
     Raises:
-        ValueError: If ``faces``/``headposes``/``track_ids`` are not aligned
-            with ``persons``.
+        ValueError: If ``faces``/``headposes``/``postures``/``track_ids`` are
+            not aligned with ``persons``.
     """
-    if not (len(persons) == len(faces) == len(headposes) == len(track_ids)):
+    if not (
+        len(persons) == len(faces) == len(headposes) == len(postures) == len(track_ids)
+    ):
         raise ValueError(
             "Misaligned per-person lists: "
             f"persons={len(persons)}, faces={len(faces)}, "
-            f"headposes={len(headposes)}, track_ids={len(track_ids)}."
+            f"headposes={len(headposes)}, postures={len(postures)}, "
+            f"track_ids={len(track_ids)}."
         )
 
     person_records = []
-    for person, face, hp, track_id in zip(persons, faces, headposes, track_ids):
+    for person, face, hp, posture, track_id in zip(
+        persons, faces, headposes, postures, track_ids
+    ):
         person_records.append(
             {
                 "track_id": None if track_id is None else int(track_id),
@@ -171,6 +233,7 @@ def _assemble_frame(
                 "confidence": float(person.confidence),
                 "face": _face_to_json(face),
                 "head_pose": _headpose_to_json(hp),
+                "posture": _posture_to_json(posture),
             }
         )
 
@@ -212,6 +275,13 @@ def _build_headpose_estimator(config: Config) -> "HeadPoseEstimator":
     return HeadPoseEstimator(config.headpose)
 
 
+def _build_posture_analyzer(config: Config) -> "PostureAnalyzer":
+    """Construct the real :class:`~backend.posture.PostureAnalyzer` from config."""
+    from backend.posture import PostureAnalyzer
+
+    return PostureAnalyzer(config.posture)
+
+
 def _build_person_tracker(config: Config) -> "PersonTracker":
     """Construct the real :class:`~backend.tracking.PersonTracker` from config."""
     from backend.tracking import PersonTracker
@@ -227,6 +297,7 @@ def process_video(
     detector: DetectorLike | None = None,
     face_analyzer: FaceAnalyzerLike | None = None,
     headpose_estimator: HeadPoseLike | None = None,
+    posture_analyzer: PostureAnalyzerLike | None = None,
     person_tracker: PersonTrackerLike | None = None,
 ) -> int:
     """Run the full Stage 1+2 pipeline over a video and write JSONL output.
@@ -241,6 +312,8 @@ def process_video(
         detector: Optional detector to reuse (constructed from config if None).
         face_analyzer: Optional face analyzer (constructed from config if None).
         headpose_estimator: Optional head-pose estimator (built if None).
+        posture_analyzer: Optional posture analyzer (built from config if
+            None). Runs on every person independently of face/head-pose.
         person_tracker: Optional tracker to reuse (built from config if None).
             Must be fresh for this video — see :class:`backend.tracking.PersonTracker`.
 
@@ -266,6 +339,7 @@ def process_video(
     detector = detector or _build_detector(config)
     face_analyzer = face_analyzer or _build_face_analyzer(config)
     headpose_estimator = headpose_estimator or _build_headpose_estimator(config)
+    posture_analyzer = posture_analyzer or _build_posture_analyzer(config)
     person_tracker = person_tracker or _build_person_tracker(config)
 
     sample_rate = max(int(config.pipeline.sample_rate), 1)
@@ -324,6 +398,9 @@ def process_video(
                 faces = face_analyzer.analyze(frame, person_bboxes)
                 face_bboxes = [f.face_bbox for f in faces]
                 headposes = headpose_estimator.estimate(frame, face_bboxes)
+                # Posture runs on every person, not just faceless ones: it is
+                # a face-independent signal by design (see backend/posture.py).
+                postures = posture_analyzer.analyze(frame, person_bboxes)
                 # Tracking runs on every processed frame, in order: its motion
                 # model assumes fixed spacing between consecutive updates, so
                 # this must stay inside the sample_rate-filtered branch.
@@ -335,6 +412,7 @@ def process_video(
                     persons,
                     faces,
                     headposes,
+                    postures,
                     track_ids,
                     objects,
                 )

@@ -53,7 +53,7 @@
     },
     "person": {
       "type": "object",
-      "required": ["track_id", "bbox", "confidence", "face", "head_pose"],
+      "required": ["track_id", "bbox", "confidence", "face", "head_pose", "posture"],
       "additionalProperties": false,
       "properties": {
         "track_id": {
@@ -102,6 +102,21 @@
             "gaze_label": {
               "type": "string",
               "enum": ["teacher", "left", "right", "down", "back"]
+            }
+          }
+        },
+        "posture": {
+          "type": ["object", "null"],
+          "description": "Raw body-pose geometry (backend/posture.py). NOT a posture or engagement classification -- see that module's docstring for why a bowed/upright label was tried and rejected as unvalidated. null when MediaPipe Pose found no body in the person's crop.",
+          "required": ["nose", "shoulder_mid", "hip_mid", "vertical_lean"],
+          "additionalProperties": false,
+          "properties": {
+            "nose": { "oneOf": [{ "$ref": "#/$defs/landmark" }, { "type": "null" }] },
+            "shoulder_mid": { "oneOf": [{ "$ref": "#/$defs/landmark" }, { "type": "null" }] },
+            "hip_mid": { "oneOf": [{ "$ref": "#/$defs/landmark" }, { "type": "null" }] },
+            "vertical_lean": {
+              "type": ["number", "null"],
+              "description": "nose.y - shoulder_mid.y, normalised by crop height. A raw feature, not a validated bowed/upright signal."
             }
           }
         }
