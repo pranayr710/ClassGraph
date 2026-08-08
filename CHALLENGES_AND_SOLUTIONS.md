@@ -144,11 +144,31 @@ Also lowered the person-confidence threshold (0.40 → 0.30) — distant student
 
 ---
 
+## 9. Turning research into code — a windowed attention tracker
+
+**Problem:** the research phase (§8) produced nine concrete design decisions, but decisions on paper aren't the same as working software. The two cheapest, highest-value ones — never judging a single frame, and giving each student a personal baseline — needed to actually exist as code.
+
+**What was built:** `backend/attention.py`, a new module that reads a finished Stage 1+2 JSONL file (does not touch the frozen schema or the live capture loop) and adds:
+
+- **A rolling 15-second window** before judging anything as off-task — directly matching the ~12-second window validated in real published lecture-gaze research, instead of scoring frame-by-frame.
+- **A 90-second sustained-distraction threshold** — a single missed glance-back never triggers a flag; only a continuous pattern does.
+- **Per-student calibration** — a personal baseline built from each student's own first 60 seconds, the one concrete accuracy lever the research found actually measured (+0.084 AUC in a real classroom study).
+- **An honestly-scoped 6-category taxonomy**, not an invented "engaged/disengaged" scale. Gaze toward a neighbor is its own "ambiguous" bucket — never counted as distraction, because the research showed that's exactly the mistake to avoid. A bowed head only counts as a meaningful signal when a phone is detected nearby — a bowed head alone is equally consistent with reading or writing.
+- **Class-level summary as the default output** — a single student's data is only reachable by deliberately asking for it, matching the "never a bare individual verdict" guardrail from the ethics research.
+
+**Validated on real data, not just synthetic tests:** run against a fresh real capture. Two honest, un-smoothed-over observations came out of it:
+- The video was too short (13 seconds) to ever trigger calibration (needs 60) — expected behavior, not a bug, but a reminder that this needs real multi-minute footage to prove out.
+- "Eyes closed" came back at 91% for this video — consistent with EAR values already measured earlier in the session, but it raises a real open question about whether the eye-closure threshold (borrowed as-is from the face module) needs its own tuning for this population. Flagged, not silently fixed.
+
+**Result:** 24 new tests (all synthetic, no ML dependency — this is pure logic on the JSONL output shape), one of which initially failed because of a wrong assumption *in the test itself* about how many frames a rolling window retains — caught and fixed before committing, not shipped broken.
+
+---
+
 ## Where things stand, in numbers
 
 | Metric | Session start | Now |
 |---|---|---|
-| Automated tests passing | 10 (9 skipped) | **38 (0 skipped, 0 failed)** |
+| Automated tests passing | 10 (9 skipped) | **62 (0 skipped, 0 failed)** |
 | CUDA confirmed working | No | **Yes — RTX 4050** |
 | Faces found on real footage | 0 | Robust (42% face, up to 100% w/ posture fallback) |
 | Persons found (12-image sample) | 139 | 236 |
@@ -156,3 +176,4 @@ Also lowered the person-confidence threshold (0.40 → 0.30) — distant student
 | Real end-to-end run completed | Never | Yes — 321 frames, schema-valid |
 | Stage 2 (tracking) | Not started | Done (ByteTrack) |
 | Stage 3 (engagement scoring) design | No research basis | Grounded in ~130 sourced findings |
+| Stage 3 (engagement scoring) code | None | First slice built: windowed attention + calibration |
