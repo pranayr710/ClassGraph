@@ -22,7 +22,7 @@ from pptx import Presentation
 from pptx.util import Emu
 
 ROOT = Path(__file__).resolve().parent
-PPTX = ROOT / "ClassGraph_Review2.pptx"
+PPTX = ROOT / "ClassGraph.pptx"
 PREVIEW = ROOT / "ppt_preview"
 PREVIEW.mkdir(exist_ok=True)
 

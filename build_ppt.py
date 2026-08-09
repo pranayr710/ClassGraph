@@ -1,11 +1,11 @@
-"""Build the ClassGraph Review-2 presentation.
+"""Build the ClassGraph presentation.
 
 Deck is structured 1:1 against the five evaluation criteria. Every number in
 the results/problems slides is a real measured value from this repository's
 own test runs -- see CHALLENGES_AND_SOLUTIONS.md for provenance.
 
 Run:  python build_ppt.py
-Out:  ClassGraph_Review2.pptx
+Out:  ClassGraph.pptx
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from pptx.util import Inches, Pt
 
 ROOT = Path(__file__).resolve().parent
 ASSETS = ROOT / "ppt_assets"
-OUT = ROOT / "ClassGraph_Review2.pptx"
+OUT = ROOT / "ClassGraph.pptx"
 
 # --------------------------------------------------------------------------- #
 # Design system
@@ -169,7 +169,7 @@ def chrome(prs, criterion, title, lead=None, page=None):
 def footer(s, page):
     bar(s, ML, SH - 0.62, CW, 0.012, RULE)
     add_text(s, ML, SH - 0.50, 6.0, 0.24,
-             [P("ClassGraph  ·  Review 2", 9, False, MUTE)])
+             [P("ClassGraph", 9, False, MUTE)])
     add_text(s, SW - MR - 1.2, SH - 0.50, 1.2, 0.24,
              [P(str(page), 9, True, MUTE, align=PP_ALIGN.RIGHT)])
 
@@ -267,7 +267,7 @@ def s01_title(prs):
     bar(s, 0, SH - 0.055, SW, 0.055, INK)
 
     add_text(s, ML, 1.62, CW, 0.4,
-             [P("CV PROJECT REVIEW 2", 11.5, True, TEAL, FONT_SB)])
+             [P("CV COURSE PROJECT", 11.5, True, TEAL, FONT_SB)])
     add_text(s, ML, 2.05, CW, 1.05, [P("ClassGraph", 58, True, INK, FONT_SB)])
     add_text(s, ML, 3.16, 9.6, 0.62,
              [P("Temporal Scene-Graph Group-Activity Analytics for Classrooms",
@@ -681,29 +681,32 @@ def s09_gap(prs, page):
 
 def s10_dataset_primary(prs, page):
     s, y = chrome(prs, "Criterion 4 — Dataset Identification",
-                  "Primary dataset: SCB-Dataset (Student Classroom Behavior)",
-                  "Selected after comparing classroom-specific options against our actual "
-                  "deployment conditions and our actual failure modes.", page)
+                  "Primary dataset: OUC-CGE (Classroom Group Engagement)",
+                  "Reselected after the previous candidate turned out to be a moving target: "
+                  "an arXiv-only preprint revised seven times with no fixed, citable version.",
+                  page)
 
-    card(s, ML, y, 4.05, 3.30, heading="Why this one",
-         lines=["Real classroom images from elevated / rear-corner cameras — the same "
-                "viewpoint that causes our hardest problems, not clean frontal webcam video.",
-                "Covers both student and teacher behaviour in one label space.",
-                "Benchmarked with YOLO-series detectors, so it drops directly into our "
-                "existing YOLOv11 detection stage.",
-                "Public and actively maintained (arXiv 2304.02488, v7 · Aug 2025)."],
-         accent=GREEN, heading_size=13, body_size=10)
+    card(s, ML, y, 4.05, 3.10, heading="Why this one",
+         lines=["Peer-reviewed and published in Nature Scientific Data (2025) — a fixed, "
+                "citable dataset paper, not a preprint that keeps changing under us.",
+                "Filmed with three real classroom cameras, including one mounted above the "
+                "teacher's head — the same elevated angle behind our hardest problem.",
+                "Labels are group-level engagement (High / Medium / Low), which is exactly "
+                "the unit our Group Activity stage (Pillar 3, ARG) needs to be evaluated on.",
+                "Openly archived with a permanent DOI on OSF, MIT-licensed code — one stable "
+                "link, not a repository that has been rewritten under the same name."],
+         accent=GREEN, heading_size=13, body_size=9.5)
 
     x2 = ML + 4.05 + 0.26
-    rect(s, x2, y, 3.55, 3.30, fill=PANEL, line=BORDER)
+    rect(s, x2, y, 3.55, 3.10, fill=PANEL, line=BORDER)
     add_text(s, x2 + 0.24, y + 0.20, 3.1, 0.3,
              [P("Scale & format", 13, True, INK, FONT_SB)])
-    rows = [("Detection split", "13,330 images"),
-            ("Detection labels", "122,977 boxes"),
-            ("Classification split", "21,019 images"),
-            ("Behaviour classes", "19–20"),
-            ("Annotation format", "bbox + class / image"),
-            ("Benchmarked with", "YOLO series, VLMs")]
+    rows = [("Video segments", "~7,705 clips"),
+            ("Total footage", "12h 50m"),
+            ("Participants", "17 students"),
+            ("Camera angles", "3 (incl. overhead)"),
+            ("Label unit", "group, per clip"),
+            ("Archive", "OSF · DOI, MIT code")]
     for i, (k, v) in enumerate(rows):
         yy = y + 0.62 + i * 0.42
         add_text(s, x2 + 0.24, yy, 1.85, 0.28, [P(k, 9.5, False, MUTE)])
@@ -712,36 +715,28 @@ def s10_dataset_primary(prs, page):
 
     x3 = x2 + 3.55 + 0.26
     w3 = SW - MR - x3
-    rect(s, x3, y, w3, 3.30, fill=INK, line=None)
+    rect(s, x3, y, w3, 3.10, fill=INK, line=None)
     add_text(s, x3 + 0.26, y + 0.20, w3 - 0.52, 0.3,
-             [P("THE DECIDING FACTOR", 10, True, RGBColor(0x6F, 0xC5, 0xCE), FONT_SB)])
-    add_text(s, x3 + 0.26, y + 0.58, w3 - 0.52, 0.80,
-             [P("Its label set resolves the exact ambiguity our geometry cannot.",
-                13.5, True, WHITE, FONT_SB, line=1.16)])
-    add_text(s, x3 + 0.26, y + 1.44, w3 - 0.52, 1.70,
-             [P("From head pose alone we can tell a student is looking down — but not "
-                "whether they are reading, writing, or disengaged. SCB labels "
-                "bow head, read, write, using the phone, turn head, talk and discuss "
-                "as separate classes, which is supervision for precisely the distinction "
-                "we documented as unresolvable without it.",
-                10.5, False, RGBColor(0xD6, 0xE4, 0xEC), line=1.26)])
+             [P("BEING HONEST ABOUT ITS LIMITS", 10, True, RGBColor(0x6F, 0xC5, 0xCE), FONT_SB)])
+    add_text(s, x3 + 0.26, y + 0.56, w3 - 0.52, 0.62,
+             [P("Small (17 students, 16 female/1 male) and group-level only.",
+                12.5, True, WHITE, FONT_SB, line=1.20)])
+    add_text(s, x3 + 0.26, y + 1.24, w3 - 0.52, 1.66,
+             [P("It cannot tell us whether ONE student is bowed over reading vs. bowed over "
+                "a phone — that per-student behaviour granularity is what the supporting "
+                "dataset below is for. We are using OUC-CGE for what it is actually strong "
+                "at: real classroom camera angles and citable group-engagement ground truth.",
+                10, False, RGBColor(0xD6, 0xE4, 0xEC), line=1.26)])
 
-    yy = y + 3.56
-    add_text(s, ML, yy, CW, 0.28,
-             [P("Class labels that map directly onto our behaviour categories",
-                11.5, True, INK, FONT_SB)])
-    tags = ["hand-raising", "read", "write", "bow head", "turn head", "talk",
-            "discuss", "using the phone", "using the computer", "stand",
-            "answer", "yawn", "leaning on desk", "teacher"]
-    x = ML
-    yy += 0.36
-    for t in tags:
-        w = 0.28 + 0.088 * len(t)
-        if x + w > SW - MR:
-            x = ML
-            yy += 0.40
-        pill(s, x, yy, w, 0.32, t, PANEL2, TEAL_D, size=9)
-        x += w + 0.12
+    yy = y + 3.34
+    card(s, ML, yy, CW, 1.06,
+         heading="Supporting dataset — SCB-Dataset, for per-student behaviour labels",
+         lines=["OUC-CGE has no equivalent to this: SCB's bow head / read / write / using "
+                "the phone / turn head / talk / discuss classes are supervision for the exact "
+                "ambiguity our own geometry cannot resolve (see Problem 6). Used as a "
+                "secondary reference, not the primary dataset, precisely because of the "
+                "version-stability issue above — cite specific frozen commits, not \"latest\"."],
+         accent=AMBER, heading_size=11.5, body_size=9.5, fill=PANEL)
     return s
 
 
