@@ -492,59 +492,63 @@ def s05_objectives(prs, page):
 
 def s06_papers(prs, page):
     s, y = chrome(prs, "Criterion 2 — Research Paper Selection",
-                  "Three base papers, one per technical pillar",
-                  "All three are peer-reviewed at top-tier venues (CVPR / ICCV), have public "
-                  "code, and map 1:1 onto a pillar of our architecture.", page)
+                  "Three base papers: robust temporal facial-signal modelling + group activity",
+                  "All three are peer-reviewed, address a real sub-problem we face, and are "
+                  "used for their method, not their task — see the note below on why.", page)
     papers = [
-        (TEAL, "PILLAR 1 · IDENTITY",
-         "Clothes-Changing Person Re-Identification With RGB Modality Only",
-         "Gu, Chang, Ma, Bai, Shan & Chen — CVPR 2022, pp. 1060–1069",
-         "Proposes a Clothes-based Adversarial Loss (CAL) that penalises the model's "
-         "ability to predict clothing, forcing it to learn clothes-irrelevant identity "
-         "cues (face, hairstyle, body shape, gait) from RGB alone.",
-         "What we take: identity that survives appearance change and occlusion, so a "
-         "student who turns away and back is not counted as a new person."),
-        (TEAL, "PILLAR 2 · RELATIONS OVER TIME",
-         "Spatial-Temporal Transformer for Dynamic Scene Graph Generation",
-         "Cong, Liao, Ackermann, Rosenhahn & Yang — ICCV 2021",
-         "STTran pairs a spatial encoder (relations within a frame) with a temporal "
-         "decoder (dependencies across frames), and accepts variable-length video "
-         "without clipping. Benchmarked on Action Genome.",
-         "What we take: the dynamic scene-graph formulation and the temporal decoder — "
-         "our classroom graph must evolve, not be re-guessed every frame."),
-        (TEAL, "PILLAR 3 · THE GROUP",
+        (TEAL, "TEMPORAL ROBUSTNESS · 1 OF 2",
+         "Robust Dynamic Facial Expression Recognition",
+         "Liu, Wang & Shen — IEEE Trans. on Biometrics, Behavior, and Identity Science, 2025",
+         "A dual-stream network that disentangles short-term facial movements from "
+         "longer-term state, and explicitly separates genuinely hard samples from "
+         "noisy/mislabelled ones using prediction agreement across resampled clips.",
+         "What we take: NOT emotion classification. We take the principle of "
+         "separating a momentary signal from a sustained state — our 15-second "
+         "rolling window does exactly this for gaze and posture."),
+        (TEAL, "TEMPORAL ROBUSTNESS · 2 OF 2",
+         "Dynamic Objectives Learning for Facial Expression Recognition",
+         "Wen, Chang, Li & Jiang — IEEE Trans. on Multimedia, vol. 22, pp. 2914–2925, 2020",
+         "Splits training into stages with different objectives, and proposes a loss "
+         "that explicitly widens the gap between easily-confused expression categories "
+         "rather than forcing every sample into a single confident class.",
+         "What we take: the same lesson without training a classifier — our "
+         "“head-down, no device” category stays deliberately separate and uncertain "
+         "instead of being forced into “engaged” or “distracted”."),
+        (TEAL, "GROUP-LEVEL REASONING",
          "Learning Actor Relation Graphs for Group Activity Recognition",
          "Wu, Wang, Wang, Guo & Wu — CVPR 2019",
          "Builds an Actor Relation Graph capturing both appearance and position "
-         "relations between actors, learned end-to-end with a GCN; adds spatially "
-         "localised and temporally randomised sparsification. Benchmarked on "
+         "relations between actors, learned end-to-end with a GCN. Benchmarked on "
          "Volleyball and Collective Activity.",
          "What we take: the actor-relation graph + GCN readout to turn per-student "
-         "states into one class-level activity label."),
+         "states into one class-level activity label — used directly, not adapted."),
     ]
     cwid = (CW - 2 * 0.24) / 3
+    card_h = 4.00
     for i, (accent, tag, title, cite, method, take) in enumerate(papers):
         x = ML + i * (cwid + 0.24)
-        rect(s, x, y, cwid, 3.92, fill=WHITE, line=BORDER)
+        rect(s, x, y, cwid, card_h, fill=WHITE, line=BORDER)
         bar(s, x, y, cwid, 0.055, accent)
-        add_text(s, x + 0.22, y + 0.24, cwid - 0.44, 0.24,
-                 [P(tag, 9, True, TEAL, FONT_SB)])
-        add_text(s, x + 0.22, y + 0.54, cwid - 0.44, 0.90,
+        add_text(s, x + 0.22, y + 0.20, cwid - 0.44, 0.24,
+                 [P(tag, 8.5, True, TEAL, FONT_SB)])
+        add_text(s, x + 0.22, y + 0.48, cwid - 0.44, 0.90,
                  [P(title, 12.5, True, INK, FONT_SB, line=1.10)])
-        add_text(s, x + 0.22, y + 1.48, cwid - 0.44, 0.42,
-                 [P(cite, 9, True, TEAL_D, line=1.16)])
-        add_text(s, x + 0.22, y + 1.96, cwid - 0.44, 1.30,
+        add_text(s, x + 0.22, y + 1.42, cwid - 0.44, 0.46,
+                 [P(cite, 8.5, True, TEAL_D, line=1.18)])
+        add_text(s, x + 0.22, y + 1.94, cwid - 0.44, 1.08,
                  [P(method, 9.5, False, BODY, line=1.20)])
-        bar(s, x + 0.22, y + 3.26, cwid - 0.44, 0.012, RULE)
-        add_text(s, x + 0.22, y + 3.38, cwid - 0.44, 0.48,
+        bar(s, x + 0.22, y + 3.06, cwid - 0.44, 0.012, RULE)
+        add_text(s, x + 0.22, y + 3.16, cwid - 0.44, 0.80,
                  [P(take, 9, True, TEAL_D, line=1.18)])
 
-    rect(s, ML, y + 4.10, CW, 0.80, fill=PANEL2, line=BORDER)
-    add_text(s, ML + 0.26, y + 4.24, CW - 0.52, 0.56,
-             [PR([R("Correctness of selection:  ", 11, True, INK, FONT_SB),
-                  R("each paper is the standard reference for its pillar, not a peripheral "
-                    "choice. Our novelty is not in re-deriving any one of them — it is in "
-                    "fusing all three in a domain none of them targets.", 11)], line=1.22)])
+    rect(s, ML, y + card_h + 0.14, CW, 0.80, fill=PANEL2, line=BORDER)
+    add_text(s, ML + 0.26, y + card_h + 0.28, CW - 0.52, 0.56,
+             [PR([R("Why facial-expression papers for a system that doesn't classify emotion:  ",
+                    11, True, INK, FONT_SB),
+                  R("we deliberately excluded emotion inference (see slide 3), but the "
+                    "*methodology* both papers use for handling ambiguous, noisy facial "
+                    "signal over time is exactly our problem too — we cite the technique, "
+                    "not the task.", 11)], line=1.22)])
     return s
 
 
@@ -561,11 +565,13 @@ def s07_lit_technical(prs, page):
          "Adversarial / causal loss suppresses clothing cues to keep RGB-only identity",
          "PRCC, LTCC,\nDeepChange",
          "Built for surveillance re-identification; never applied to session-scoped classroom identity"],
-        ["Video scene\ngraph",
-         "STTran (ICCV 2021)",
-         "Spatial encoder + temporal decoder over variable-length video",
-         "Action Genome",
-         "Generic object–object predicates; nothing for attention, gaze or education"],
+        ["Dynamic/robust\nfacial signal",
+         "Liu et al. (2025);\nWen et al. (2020)",
+         "Disentangle short-term movement from sustained state; separate hard samples "
+         "from noisy ones",
+         "DFEW, FERV39K",
+         "Built for emotion classification, not behaviour geometry — we take the "
+         "method (temporal + ambiguity handling), not the task"],
         ["Group activity\nrecognition",
          "ARG (CVPR 2019);\nGroupFormer (ICCV 2021)",
          "Actor relation graph / joint spatio-temporal attention over a GCN",
@@ -749,11 +755,11 @@ def s12_architecture(prs, page):
     stages = [
         ("1", "Perception", "YOLOv11 · Face Mesh\nBody pose · head pose",
          "who & where", "A", GREEN, "BUILT"),
-        ("2", "Identity", "ByteTrack now\nCAL Re-ID next",
+        ("2", "Identity", "ByteTrack now\ncloth-invariant Re-ID next",
          "stable IDs", "A", GREEN, "BUILT"),
         ("3", "Scene Graph", "nodes = students\nedges = behaviours",
          "what relates to what", "B", MUTE, "NEXT"),
-        ("4", "Temporal", "STTran-style decoder\nover the graph",
+        ("4", "Temporal", "sequence decoder\nover the graph",
          "how it evolves", "B", MUTE, "NEXT"),
         ("5", "Group Activity", "ARG-style graph\nreadout + dashboard",
          "the class as a whole", "C", MUTE, "NEXT"),
